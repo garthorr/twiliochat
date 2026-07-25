@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import twilio from "twilio";
 import type { Config } from "../config.js";
+import type { Hub } from "../realtime.js";
 import type { Db } from "../services/messaging.js";
 import {
   mapTwilioStatus,
@@ -14,6 +15,7 @@ const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response/>';
 export interface WebhookDeps {
   config: Config;
   db: Db;
+  hub: Hub;
 }
 
 /**
@@ -35,7 +37,7 @@ function isValidTwilioRequest(config: Config, req: FastifyRequest): boolean {
 
 export function registerWebhookRoutes(
   app: FastifyInstance,
-  { config, db }: WebhookDeps,
+  { config, db, hub }: WebhookDeps,
 ): void {
   app.addHook("preHandler", async (req, reply) => {
     if (!req.url.startsWith("/webhooks/")) return;
@@ -65,6 +67,11 @@ export function registerWebhookRoutes(
       body: body.Body ?? "",
     });
     if (result) {
+      hub.broadcast({
+        type: "message.new",
+        conversation: result.conversation,
+        message: result.message,
+      });
       req.log.info(
         { conversationId: result.conversation.id, messageId: result.message.id },
         "inbound message recorded",
@@ -86,7 +93,13 @@ export function registerWebhookRoutes(
 
     const status = mapTwilioStatus(rawStatus);
     if (status) {
-      await updateMessageStatusBySid(db, sid, status, body.ErrorCode ?? null);
+      const updated = await updateMessageStatusBySid(
+        db,
+        sid,
+        status,
+        body.ErrorCode ?? null,
+      );
+      if (updated) hub.broadcast({ type: "message.status", message: updated });
     } else {
       req.log.warn({ twilioSid: sid, rawStatus }, "unknown twilio status");
     }

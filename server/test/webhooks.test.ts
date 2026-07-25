@@ -22,7 +22,7 @@ describe("Twilio webhooks", () => {
   };
 
   it("records an inbound message and threads it by sender", async () => {
-    const res = await ctx.app.inject({
+    const res = await ctx.inject({
       method: "POST",
       url: "/webhooks/inbound",
       ...signedWebhook("/webhooks/inbound", inboundParams),
@@ -30,7 +30,7 @@ describe("Twilio webhooks", () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toContain("text/xml");
 
-    const list = await ctx.app.inject({ method: "GET", url: "/api/conversations" });
+    const list = await ctx.inject({ method: "GET", url: "/api/conversations" });
     const { conversations } = list.json();
     expect(conversations).toHaveLength(1);
     expect(conversations[0].participants).toEqual(["+15551234567"]);
@@ -41,18 +41,18 @@ describe("Twilio webhooks", () => {
 
   it("ignores duplicate webhook deliveries (same MessageSid)", async () => {
     for (let i = 0; i < 2; i++) {
-      await ctx.app.inject({
+      await ctx.inject({
         method: "POST",
         url: "/webhooks/inbound",
         ...signedWebhook("/webhooks/inbound", inboundParams),
       });
     }
-    const list = await ctx.app.inject({ method: "GET", url: "/api/conversations" });
+    const list = await ctx.inject({ method: "GET", url: "/api/conversations" });
     const { conversations } = list.json();
     expect(conversations).toHaveLength(1);
     expect(conversations[0].unreadCount).toBe(1);
 
-    const msgs = await ctx.app.inject({
+    const msgs = await ctx.inject({
       method: "GET",
       url: `/api/conversations/${conversations[0].id}/messages`,
     });
@@ -64,7 +64,7 @@ describe("Twilio webhooks", () => {
       ["SM_a", "first"],
       ["SM_b", "second"],
     ]) {
-      await ctx.app.inject({
+      await ctx.inject({
         method: "POST",
         url: "/webhooks/inbound",
         ...signedWebhook("/webhooks/inbound", {
@@ -74,7 +74,7 @@ describe("Twilio webhooks", () => {
         }),
       });
     }
-    const list = await ctx.app.inject({ method: "GET", url: "/api/conversations" });
+    const list = await ctx.inject({ method: "GET", url: "/api/conversations" });
     const { conversations } = list.json();
     expect(conversations).toHaveLength(1);
     expect(conversations[0].unreadCount).toBe(2);
@@ -83,7 +83,7 @@ describe("Twilio webhooks", () => {
 
   it("rejects requests without a valid signature", async () => {
     const good = signedWebhook("/webhooks/inbound", inboundParams);
-    const res = await ctx.app.inject({
+    const res = await ctx.inject({
       method: "POST",
       url: "/webhooks/inbound",
       payload: good.payload,
@@ -94,7 +94,7 @@ describe("Twilio webhooks", () => {
     });
     expect(res.statusCode).toBe(403);
 
-    const missing = await ctx.app.inject({
+    const missing = await ctx.inject({
       method: "POST",
       url: "/webhooks/inbound",
       payload: good.payload,
@@ -104,7 +104,7 @@ describe("Twilio webhooks", () => {
   });
 
   it("applies status callbacks to the matching outbound message", async () => {
-    const sendRes = await ctx.app.inject({
+    const sendRes = await ctx.inject({
       method: "POST",
       url: "/api/messages",
       payload: { to: "+15551234567", body: "outbound hi" },
@@ -116,7 +116,7 @@ describe("Twilio webhooks", () => {
       ["sent", "sent"],
       ["delivered", "delivered"],
     ] as const) {
-      const res = await ctx.app.inject({
+      const res = await ctx.inject({
         method: "POST",
         url: "/webhooks/status",
         ...signedWebhook("/webhooks/status", {
@@ -126,7 +126,7 @@ describe("Twilio webhooks", () => {
       });
       expect(res.statusCode).toBe(204);
 
-      const msgs = await ctx.app.inject({
+      const msgs = await ctx.inject({
         method: "GET",
         url: `/api/conversations/${sendRes.json().conversationId}/messages`,
       });
@@ -135,12 +135,12 @@ describe("Twilio webhooks", () => {
   });
 
   it("records the error code on undelivered messages", async () => {
-    const sendRes = await ctx.app.inject({
+    const sendRes = await ctx.inject({
       method: "POST",
       url: "/api/messages",
       payload: { to: "+15551234567", body: "will bounce" },
     });
-    await ctx.app.inject({
+    await ctx.inject({
       method: "POST",
       url: "/webhooks/status",
       ...signedWebhook("/webhooks/status", {
@@ -149,7 +149,7 @@ describe("Twilio webhooks", () => {
         ErrorCode: "30003",
       }),
     });
-    const msgs = await ctx.app.inject({
+    const msgs = await ctx.inject({
       method: "GET",
       url: `/api/conversations/${sendRes.json().conversationId}/messages`,
     });

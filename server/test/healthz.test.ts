@@ -11,10 +11,10 @@ describe("GET /healthz", () => {
     await app.close();
   });
 
-  it("404s unknown API routes as JSON", async () => {
+  it("401s unknown API routes before they can 404", async () => {
     const app = await buildApp({ config: loadConfig({}) });
     const res = await app.inject({ method: "GET", url: "/api/nope" });
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(401);
     await app.close();
   });
 });

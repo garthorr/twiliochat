@@ -1,38 +1,25 @@
 import { useEffect, useState } from "react";
+import { api } from "./api";
+import { Login } from "./Login";
+import { Messenger } from "./Messenger";
 
-type Health = { status: string; db: string } | null;
+type SessionState = "loading" | "anonymous" | "authenticated";
 
 export function App() {
-  const [health, setHealth] = useState<Health>(null);
+  const [session, setSession] = useState<SessionState>("loading");
 
   useEffect(() => {
-    fetch("/healthz")
-      .then((r) => r.json())
-      .then(setHealth)
-      .catch(() => setHealth({ status: "unreachable", db: "unknown" }));
+    api
+      .session()
+      .then((s) => setSession(s.authenticated ? "authenticated" : "anonymous"))
+      .catch(() => setSession("anonymous"));
   }, []);
 
-  return (
-    <div className="app">
-      <aside className="sidebar">
-        <header className="sidebar-header">
-          <h1>Messages</h1>
-        </header>
-        <input className="search" type="search" placeholder="Search" />
-        <div className="conversation-list">
-          <p className="empty-hint">No conversations yet</p>
-        </div>
-      </aside>
-      <main className="thread">
-        <div className="thread-empty">
-          <p className="thread-empty-title">TwilioChat</p>
-          <p className="thread-empty-sub">
-            {health
-              ? `Server: ${health.status} · DB: ${health.db}`
-              : "Connecting…"}
-          </p>
-        </div>
-      </main>
-    </div>
-  );
+  if (session === "loading") {
+    return <div className="boot" />;
+  }
+  if (session === "anonymous") {
+    return <Login onSuccess={() => setSession("authenticated")} />;
+  }
+  return <Messenger onLogout={() => setSession("anonymous")} />;
 }

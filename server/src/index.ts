@@ -18,6 +18,9 @@ await runMigrations(db, migrationsFolder);
 const sender = config.twilio ? createTwilioSender(config.twilio) : null;
 const app = await buildApp({ config, pool, db, sender });
 
+if (!config.appPassword) {
+  app.log.warn("APP_PASSWORD not set — nobody can log in");
+}
 if (!config.twilio) {
   app.log.warn("TWILIO_* env vars not set — sending is disabled");
 }

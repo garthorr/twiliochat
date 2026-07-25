@@ -99,14 +99,15 @@ export async function recordInboundMessage(
   const message = inserted[0];
   if (!message) return null; // Twilio retried a webhook we already handled.
 
-  await db
+  const updated = await db
     .update(conversations)
     .set({
       lastMessageAt: message.createdAt,
       unreadCount: sql`${conversations.unreadCount} + 1`,
     })
-    .where(eq(conversations.id, conversation.id));
-  return { conversation, message };
+    .where(eq(conversations.id, conversation.id))
+    .returning();
+  return { conversation: updated[0] ?? conversation, message };
 }
 
 export async function createOutboundMessage(
@@ -125,11 +126,12 @@ export async function createOutboundMessage(
     })
     .returning();
   const message = inserted[0]!;
-  await db
+  const updated = await db
     .update(conversations)
     .set({ lastMessageAt: message.createdAt })
-    .where(eq(conversations.id, conversation.id));
-  return { conversation, message };
+    .where(eq(conversations.id, conversation.id))
+    .returning();
+  return { conversation: updated[0] ?? conversation, message };
 }
 
 export async function setMessageSid(

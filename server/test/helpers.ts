@@ -13,6 +13,7 @@ import type { SmsSender } from "../src/twilio.js";
 export const TEST_AUTH_TOKEN = "test_auth_token_not_a_secret";
 export const TEST_PUBLIC_URL = "https://twiliochat.example.test";
 export const TEST_FROM_NUMBER = "+15005550006";
+export const TEST_PASSWORD = "test-password-not-a-secret";
 
 export function testConfig(): Config {
   return loadConfig({
@@ -20,7 +21,26 @@ export function testConfig(): Config {
     TWILIO_AUTH_TOKEN: TEST_AUTH_TOKEN,
     TWILIO_PHONE_NUMBER: TEST_FROM_NUMBER,
     PUBLIC_URL: TEST_PUBLIC_URL,
+    APP_PASSWORD: TEST_PASSWORD,
+    SESSION_SECRET: "test-session-secret-not-a-secret",
   });
+}
+
+type App = Awaited<ReturnType<typeof buildApp>>;
+type InjectOptions = Parameters<App["inject"]>[0] & object;
+
+/** Log in and return a cookie header usable for API and WS requests. */
+export async function loginHeaders(app: App): Promise<{ cookie: string }> {
+  const res = await app.inject({
+    method: "POST",
+    url: "/api/login",
+    payload: { password: TEST_PASSWORD },
+  });
+  const cookie = res.cookies.find((c) => c.name === "session");
+  if (res.statusCode !== 200 || !cookie) {
+    throw new Error(`test login failed: ${res.statusCode} ${res.body}`);
+  }
+  return { cookie: `${cookie.name}=${cookie.value}` };
 }
 
 export async function createTestDb(): Promise<Db> {
@@ -65,7 +85,13 @@ export async function createTestApp() {
   const db = await createTestDb();
   const sender = createFakeSender();
   const app = await buildApp({ config, db, sender });
-  return { app, db, sender, config };
+  const authHeaders = await loginHeaders(app);
+  const inject = (opts: InjectOptions) =>
+    app.inject({
+      ...opts,
+      headers: { ...authHeaders, ...(opts.headers ?? {}) },
+    });
+  return { app, db, sender, config, authHeaders, inject };
 }
 
 /** Build a signed, form-encoded webhook request body + headers. */

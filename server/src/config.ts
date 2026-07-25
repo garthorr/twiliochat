@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 export interface TwilioConfig {
   accountSid: string;
   authToken: string;
@@ -12,6 +14,8 @@ export interface Config {
   /** Public HTTPS base URL Twilio webhooks are pointed at. */
   publicUrl: string | null;
   twilio: TwilioConfig | null;
+  appPassword: string | null;
+  sessionSecret: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -33,5 +37,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicDir: env.PUBLIC_DIR ?? null,
     publicUrl: env.PUBLIC_URL ? env.PUBLIC_URL.replace(/\/+$/, "") : null,
     twilio,
+    appPassword: env.APP_PASSWORD || null,
+    // Without a configured secret, sessions just reset on restart.
+    sessionSecret: env.SESSION_SECRET || randomBytes(32).toString("hex"),
   };
 }

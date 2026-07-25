@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Config } from "../config.js";
+import type { Hub } from "../realtime.js";
 import type { Db } from "../services/messaging.js";
 import {
   createOutboundMessage,
@@ -18,11 +19,12 @@ export interface ApiDeps {
   config: Config;
   db: Db;
   sender: SmsSender | null;
+  hub: Hub;
 }
 
 export function registerApiRoutes(
   app: FastifyInstance,
-  { config, db, sender }: ApiDeps,
+  { config, db, sender, hub }: ApiDeps,
 ): void {
   app.get("/api/conversations", async () => {
     return { conversations: await listConversations(db) };
@@ -47,6 +49,7 @@ export function registerApiRoutes(
         return reply.status(404).send({ error: "conversation not found" });
       }
       await markConversationRead(db, conversation.id);
+      hub.broadcast({ type: "conversation.read", conversationId: conversation.id });
       return reply.status(204).send();
     },
   );
@@ -87,6 +90,11 @@ export function registerApiRoutes(
           : {}),
       });
       const updated = await setMessageSid(db, message.id, result.sid);
+      hub.broadcast({
+        type: "message.new",
+        conversation,
+        message: updated ?? message,
+      });
       return reply.status(201).send({
         conversationId: conversation.id,
         message: updated ?? message,
@@ -98,6 +106,11 @@ export function registerApiRoutes(
           ? String((err as { code: unknown }).code)
           : null;
       const failed = await markMessageFailed(db, message.id, code);
+      hub.broadcast({
+        type: "message.new",
+        conversation,
+        message: failed ?? message,
+      });
       // The message row is the source of truth; clients render "Not Delivered".
       return reply.status(201).send({
         conversationId: conversation.id,

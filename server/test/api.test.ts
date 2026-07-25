@@ -3,6 +3,7 @@ import { buildApp } from "../src/app.js";
 import {
   createTestApp,
   createTestDb,
+  loginHeaders,
   signedWebhook,
   testConfig,
   TEST_FROM_NUMBER,
@@ -23,7 +24,7 @@ describe("messages API", () => {
   });
 
   it("sends a message via Twilio and stores it as queued", async () => {
-    const res = await ctx.app.inject({
+    const res = await ctx.inject({
       method: "POST",
       url: "/api/messages",
       payload: { to: "(555) 123-4567", body: "hey!" },
@@ -44,12 +45,12 @@ describe("messages API", () => {
   });
 
   it("threads outbound and inbound with the same number together", async () => {
-    await ctx.app.inject({
+    await ctx.inject({
       method: "POST",
       url: "/api/messages",
       payload: { to: "+15551234567", body: "outbound" },
     });
-    await ctx.app.inject({
+    await ctx.inject({
       method: "POST",
       url: "/webhooks/inbound",
       ...signedWebhook("/webhooks/inbound", {
@@ -60,11 +61,11 @@ describe("messages API", () => {
       }),
     });
 
-    const list = await ctx.app.inject({ method: "GET", url: "/api/conversations" });
+    const list = await ctx.inject({ method: "GET", url: "/api/conversations" });
     const { conversations } = list.json();
     expect(conversations).toHaveLength(1);
 
-    const msgs = await ctx.app.inject({
+    const msgs = await ctx.inject({
       method: "GET",
       url: `/api/conversations/${conversations[0].id}/messages`,
     });
@@ -75,7 +76,7 @@ describe("messages API", () => {
   it("marks the message failed when Twilio rejects the send", async () => {
     const err = Object.assign(new Error("blocked"), { code: 21610 });
     ctx.sender.failNextWith = err;
-    const res = await ctx.app.inject({
+    const res = await ctx.inject({
       method: "POST",
       url: "/api/messages",
       payload: { to: "+15551234567", body: "nope" },
@@ -86,14 +87,14 @@ describe("messages API", () => {
   });
 
   it("rejects invalid numbers and empty bodies", async () => {
-    const badNumber = await ctx.app.inject({
+    const badNumber = await ctx.inject({
       method: "POST",
       url: "/api/messages",
       payload: { to: "not-a-number", body: "hi" },
     });
     expect(badNumber.statusCode).toBe(400);
 
-    const emptyBody = await ctx.app.inject({
+    const emptyBody = await ctx.inject({
       method: "POST",
       url: "/api/messages",
       payload: { to: "+15551234567", body: "   " },
@@ -102,7 +103,7 @@ describe("messages API", () => {
   });
 
   it("clears the unread count when a conversation is marked read", async () => {
-    await ctx.app.inject({
+    await ctx.inject({
       method: "POST",
       url: "/webhooks/inbound",
       ...signedWebhook("/webhooks/inbound", {
@@ -112,17 +113,17 @@ describe("messages API", () => {
         Body: "unread",
       }),
     });
-    const list = await ctx.app.inject({ method: "GET", url: "/api/conversations" });
+    const list = await ctx.inject({ method: "GET", url: "/api/conversations" });
     const convo = list.json().conversations[0];
     expect(convo.unreadCount).toBe(1);
 
-    const read = await ctx.app.inject({
+    const read = await ctx.inject({
       method: "POST",
       url: `/api/conversations/${convo.id}/read`,
     });
     expect(read.statusCode).toBe(204);
 
-    const after = await ctx.app.inject({ method: "GET", url: "/api/conversations" });
+    const after = await ctx.inject({ method: "GET", url: "/api/conversations" });
     expect(after.json().conversations[0].unreadCount).toBe(0);
   });
 
@@ -133,6 +134,7 @@ describe("messages API", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/messages",
+      headers: await loginHeaders(app),
       payload: { to: "+15551234567", body: "hi" },
     });
     expect(res.statusCode).toBe(503);

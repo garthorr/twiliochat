@@ -1,10 +1,15 @@
+import fastifyCookie from "@fastify/cookie";
 import fastifyFormbody from "@fastify/formbody";
 import fastifyStatic from "@fastify/static";
+import fastifyWebsocket from "@fastify/websocket";
 import Fastify from "fastify";
 import fs from "node:fs";
 import type pg from "pg";
+import { isAuthenticated } from "./auth.js";
 import type { Config } from "./config.js";
+import { Hub } from "./realtime.js";
 import { registerApiRoutes } from "./routes/api.js";
+import { registerAuthRoutes } from "./routes/auth.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import type { Db } from "./services/messaging.js";
 import type { SmsSender } from "./twilio.js";
@@ -17,11 +22,27 @@ export interface AppDeps {
   sender?: SmsSender | null;
 }
 
+// Reachable without a session cookie; everything else under /api requires one.
+const PUBLIC_API_ROUTES = new Set(["/api/login", "/api/session"]);
+
 export async function buildApp({ config, pool, db, sender }: AppDeps) {
   const app = Fastify({ logger: true });
+  const hub = new Hub();
 
   // Twilio webhooks arrive as application/x-www-form-urlencoded.
   await app.register(fastifyFormbody);
+  await app.register(fastifyCookie, { secret: config.sessionSecret });
+  await app.register(fastifyWebsocket);
+
+  app.addHook("preHandler", async (req, reply) => {
+    const url = (req.url.split("?")[0] ?? "").replace(/\/+$/, "") || "/";
+    if (!url.startsWith("/api/") || PUBLIC_API_ROUTES.has(url)) return;
+    if (!isAuthenticated(req)) {
+      return reply.status(401).send({ error: "unauthorized" });
+    }
+  });
+
+  app.addHook("onClose", async () => hub.close());
 
   app.get("/healthz", async (_req, reply) => {
     if (!pool) {
@@ -35,9 +56,19 @@ export async function buildApp({ config, pool, db, sender }: AppDeps) {
     }
   });
 
+  registerAuthRoutes(app, { config });
+
   if (db) {
-    registerWebhookRoutes(app, { config, db });
-    registerApiRoutes(app, { config, db, sender: sender ?? null });
+    app.get("/ws", { websocket: true }, (socket, req) => {
+      if (!isAuthenticated(req)) {
+        socket.close(4401, "unauthorized");
+        return;
+      }
+      hub.add(socket);
+    });
+
+    registerWebhookRoutes(app, { config, db, hub });
+    registerApiRoutes(app, { config, db, sender: sender ?? null, hub });
   }
 
   if (config.publicDir && fs.existsSync(config.publicDir)) {
