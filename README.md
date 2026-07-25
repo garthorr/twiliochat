@@ -1,0 +1,56 @@
+# TwilioChat
+
+A self-hosted, dockerized messaging app for SMS/MMS via Twilio, styled after the
+macOS Messages app and installable as a PWA on mobile. See [PLAN.md](PLAN.md) for
+the full architecture and roadmap.
+
+**Status: Phase 1** — project skeleton: pnpm workspace, Fastify server with health
+check and database schema/migrations, React app shell, Docker Compose, CI.
+
+## Stack
+
+- **server/** — Node 22 + TypeScript + Fastify, Drizzle ORM + PostgreSQL
+- **web/** — React 19 + Vite (PWA layer lands in phase 4)
+- **Docker** — one `app` container (serves API + built frontend) plus Postgres
+
+## Quick start (Docker)
+
+```sh
+cp .env.example .env   # fill in your values — never commit .env
+docker compose up --build
+```
+
+Then open http://localhost:8080. Database migrations run automatically on start.
+
+## Development
+
+```sh
+pnpm install
+docker compose up db -d          # just Postgres
+DATABASE_URL=postgres://twiliochat:twiliochat@localhost:5432/twiliochat pnpm dev
+```
+
+- Web dev server: http://localhost:5173 (proxies `/api` and `/healthz` to :8080)
+- API: http://localhost:8080
+
+### Checks
+
+```sh
+pnpm lint && pnpm typecheck && pnpm test && pnpm build
+```
+
+### Database migrations
+
+Schema lives in `server/src/db/schema.ts`. After changing it:
+
+```sh
+pnpm --filter @twiliochat/server db:generate
+```
+
+Generated SQL in `server/drizzle/` is applied automatically at server startup.
+
+## Security notes
+
+- This repo is **public**: real credentials belong only in the git-ignored `.env`.
+  Use Twilio test credentials and magic numbers (e.g. `+15005550006`) in development.
+- CI runs gitleaks; enable GitHub push protection on your fork too.

@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+*.tsbuildinfo
+
+# environment / secrets — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# runtime data (message content is personal data)
+media/
+*.dump
+*.sql.gz
+logs/
+*.log
+
+# tooling
+.eslintcache
+coverage/
+.DS_Store
