@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createDb, runMigrations } from "./db/client.js";
+import { createTwilioSender } from "./twilio.js";
 
 const config = loadConfig();
 const { pool, db } = createDb(config.databaseUrl);
@@ -14,7 +15,15 @@ const migrationsFolder = path.join(
 );
 await runMigrations(db, migrationsFolder);
 
-const app = await buildApp({ config, pool });
+const sender = config.twilio ? createTwilioSender(config.twilio) : null;
+const app = await buildApp({ config, pool, db, sender });
+
+if (!config.twilio) {
+  app.log.warn("TWILIO_* env vars not set — sending is disabled");
+}
+if (!config.publicUrl) {
+  app.log.warn("PUBLIC_URL not set — webhook signature validation will reject all requests");
+}
 
 try {
   await app.listen({ port: config.port, host: config.host });
