@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Conversation } from "./api";
 import type { Selection } from "./Messenger";
 import {
@@ -7,6 +7,7 @@ import {
   conversationName,
   sidebarTime,
 } from "./format";
+import { disablePush, enablePush, pushState, type PushState } from "./push";
 
 function Avatar({ conversation }: { conversation: Conversation }) {
   const initials = avatarInitials(conversation);
@@ -45,6 +46,17 @@ export function Sidebar({
   onLogout: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const [push, setPush] = useState<PushState>("unsupported");
+
+  useEffect(() => {
+    pushState()
+      .then(setPush)
+      .catch(() => setPush("unsupported"));
+  }, []);
+
+  const togglePush = async () => {
+    setPush(push === "on" ? await disablePush() : await enablePush());
+  };
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -62,6 +74,42 @@ export function Sidebar({
       <header className="sidebar-header">
         <h1>Messages</h1>
         <div className="sidebar-actions">
+          {(push === "on" || push === "off" || push === "denied") && (
+            <button
+              className={`icon-button ${push === "on" ? "active" : ""}`}
+              title={
+                push === "on"
+                  ? "Notifications on"
+                  : push === "denied"
+                    ? "Notifications blocked in browser settings"
+                    : "Enable notifications"
+              }
+              aria-label="Toggle notifications"
+              aria-pressed={push === "on"}
+              disabled={push === "denied"}
+              onClick={() => void togglePush()}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 3a5.5 5.5 0 0 1 5.5 5.5c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5A5.5 5.5 0 0 1 12 3zM10 18a2 2 0 0 0 4 0"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                {push !== "on" && (
+                  <path
+                    d="M4 4l16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                )}
+              </svg>
+            </button>
+          )}
           <button
             className="icon-button"
             title="New Message"

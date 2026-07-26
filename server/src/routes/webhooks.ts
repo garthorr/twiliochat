@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import twilio from "twilio";
 import type { Config } from "../config.js";
 import type { Hub } from "../realtime.js";
+import type { PushSender } from "../push.js";
+import { notifyAll } from "../services/push.js";
 import type { Db } from "../services/messaging.js";
 import {
   mapTwilioStatus,
@@ -16,6 +18,13 @@ export interface WebhookDeps {
   config: Config;
   db: Db;
   hub: Hub;
+  pushSender: PushSender | null;
+}
+
+function formatNumberForNotification(raw: string): string {
+  const m = /^\+1([2-9]\d{2})(\d{3})(\d{4})$/.exec(raw);
+  if (m) return `(${m[1]}) ${m[2]}-${m[3]}`;
+  return raw;
 }
 
 /**
@@ -37,7 +46,7 @@ function isValidTwilioRequest(config: Config, req: FastifyRequest): boolean {
 
 export function registerWebhookRoutes(
   app: FastifyInstance,
-  { config, db, hub }: WebhookDeps,
+  { config, db, hub, pushSender }: WebhookDeps,
 ): void {
   app.addHook("preHandler", async (req, reply) => {
     if (!req.url.startsWith("/webhooks/")) return;
@@ -76,6 +85,17 @@ export function registerWebhookRoutes(
         { conversationId: result.conversation.id, messageId: result.message.id },
         "inbound message recorded",
       );
+      if (pushSender) {
+        const title =
+          result.conversation.displayName ?? formatNumberForNotification(from);
+        const text = result.message.body;
+        // Fire-and-forget: never let a slow push service delay the TwiML reply.
+        void notifyAll(db, pushSender, {
+          title,
+          body: text.length > 120 ? `${text.slice(0, 119)}…` : text,
+          conversationId: result.conversation.id,
+        }).catch((err) => req.log.warn({ err }, "web push fan-out failed"));
+      }
     } else {
       req.log.info({ twilioSid: sid }, "duplicate inbound webhook ignored");
     }

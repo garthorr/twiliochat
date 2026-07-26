@@ -8,8 +8,10 @@ import type pg from "pg";
 import { isAuthenticated } from "./auth.js";
 import type { Config } from "./config.js";
 import { Hub } from "./realtime.js";
+import type { PushSender } from "./push.js";
 import { registerApiRoutes } from "./routes/api.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerPushRoutes } from "./routes/push.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import type { Db } from "./services/messaging.js";
 import type { SmsSender } from "./twilio.js";
@@ -20,12 +22,19 @@ export interface AppDeps {
   pool?: pg.Pool;
   db?: Db;
   sender?: SmsSender | null;
+  pushSender?: PushSender | null;
 }
 
 // Reachable without a session cookie; everything else under /api requires one.
 const PUBLIC_API_ROUTES = new Set(["/api/login", "/api/session"]);
 
-export async function buildApp({ config, pool, db, sender }: AppDeps) {
+export async function buildApp({
+  config,
+  pool,
+  db,
+  sender,
+  pushSender,
+}: AppDeps) {
   const app = Fastify({ logger: true });
   const hub = new Hub();
 
@@ -67,8 +76,14 @@ export async function buildApp({ config, pool, db, sender }: AppDeps) {
       hub.add(socket);
     });
 
-    registerWebhookRoutes(app, { config, db, hub });
+    registerWebhookRoutes(app, {
+      config,
+      db,
+      hub,
+      pushSender: pushSender ?? null,
+    });
     registerApiRoutes(app, { config, db, sender: sender ?? null, hub });
+    registerPushRoutes(app, { config, db });
   }
 
   if (config.publicDir && fs.existsSync(config.publicDir)) {

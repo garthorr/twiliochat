@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createDb, runMigrations } from "./db/client.js";
+import { createWebPushSender } from "./push.js";
 import { createTwilioSender } from "./twilio.js";
 
 const config = loadConfig();
@@ -16,13 +17,17 @@ const migrationsFolder = path.join(
 await runMigrations(db, migrationsFolder);
 
 const sender = config.twilio ? createTwilioSender(config.twilio) : null;
-const app = await buildApp({ config, pool, db, sender });
+const pushSender = config.vapid ? createWebPushSender(config.vapid) : null;
+const app = await buildApp({ config, pool, db, sender, pushSender });
 
 if (!config.appPassword) {
   app.log.warn("APP_PASSWORD not set — nobody can log in");
 }
 if (!config.twilio) {
   app.log.warn("TWILIO_* env vars not set — sending is disabled");
+}
+if (!config.vapid) {
+  app.log.warn("VAPID_* not set — push notifications are disabled");
 }
 if (!config.publicUrl) {
   app.log.warn("PUBLIC_URL not set — webhook signature validation will reject all requests");

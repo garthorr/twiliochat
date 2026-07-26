@@ -7,6 +7,7 @@ import twilio from "twilio";
 import { buildApp } from "../src/app.js";
 import { loadConfig, type Config } from "../src/config.js";
 import * as schema from "../src/db/schema.js";
+import { PushGoneError, type PushSender } from "../src/push.js";
 import type { Db } from "../src/services/messaging.js";
 import type { SmsSender } from "../src/twilio.js";
 
@@ -23,6 +24,9 @@ export function testConfig(): Config {
     PUBLIC_URL: TEST_PUBLIC_URL,
     APP_PASSWORD: TEST_PASSWORD,
     SESSION_SECRET: "test-session-secret-not-a-secret",
+    // Structurally valid VAPID keys are not needed: the sender is faked.
+    VAPID_PUBLIC_KEY: "test-vapid-public-key",
+    VAPID_PRIVATE_KEY: "test-vapid-private-key",
   });
 }
 
@@ -80,18 +84,38 @@ export function createFakeSender(): FakeSender {
   return sender;
 }
 
+export interface FakePushSender extends PushSender {
+  sent: Array<{ endpoint: string; payload: string }>;
+  goneEndpoints: Set<string>;
+}
+
+export function createFakePushSender(): FakePushSender {
+  const sender: FakePushSender = {
+    sent: [],
+    goneEndpoints: new Set(),
+    async send(subscription, payload) {
+      if (sender.goneEndpoints.has(subscription.endpoint)) {
+        throw new PushGoneError(410);
+      }
+      sender.sent.push({ endpoint: subscription.endpoint, payload });
+    },
+  };
+  return sender;
+}
+
 export async function createTestApp() {
   const config = testConfig();
   const db = await createTestDb();
   const sender = createFakeSender();
-  const app = await buildApp({ config, db, sender });
+  const pushSender = createFakePushSender();
+  const app = await buildApp({ config, db, sender, pushSender });
   const authHeaders = await loginHeaders(app);
   const inject = (opts: InjectOptions) =>
     app.inject({
       ...opts,
       headers: { ...authHeaders, ...(opts.headers ?? {}) },
     });
-  return { app, db, sender, config, authHeaders, inject };
+  return { app, db, sender, pushSender, config, authHeaders, inject };
 }
 
 /** Build a signed, form-encoded webhook request body + headers. */

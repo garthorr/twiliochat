@@ -181,6 +181,15 @@ button {
   color: var(--text);
 }
 
+.icon-button.active {
+  color: var(--accent);
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .icon-button svg {
   width: 17px;
   height: 17px;

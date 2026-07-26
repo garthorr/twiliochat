@@ -119,6 +119,25 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
     [loadMessages],
   );
 
+  // Deep links from notifications: ?c=<id> when the app is opened cold, or a
+  // message from the service worker when an existing window is focused.
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(location.search).get("c");
+    if (fromUrl) {
+      select(fromUrl);
+      history.replaceState(null, "", location.pathname);
+    }
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as { type?: string; conversationId?: string };
+      if (data?.type === "open-conversation" && data.conversationId) {
+        select(data.conversationId);
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", onMessage);
+    return () =>
+      navigator.serviceWorker?.removeEventListener("message", onMessage);
+  }, [select]);
+
   const send = useCallback(
     async (to: string, body: string): Promise<void> => {
       const { conversationId, message } = await api.send(to, body);

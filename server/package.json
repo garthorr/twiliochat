@@ -20,12 +20,14 @@
     "fastify": "^5.4.0",
     "pg": "^8.16.0",
     "twilio": "^6.0.2",
+    "web-push": "^3.6.7",
     "ws": "^8.21.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
     "@types/node": "^22.15.0",
     "@types/pg": "^8.15.0",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.0",
     "tsx": "^4.20.0",

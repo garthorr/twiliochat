@@ -16,6 +16,13 @@ export interface Config {
   twilio: TwilioConfig | null;
   appPassword: string | null;
   sessionSecret: string;
+  vapid: VapidConfig | null;
+}
+
+export interface VapidConfig {
+  publicKey: string;
+  privateKey: string;
+  subject: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -40,5 +47,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     appPassword: env.APP_PASSWORD || null,
     // Without a configured secret, sessions just reset on restart.
     sessionSecret: env.SESSION_SECRET || randomBytes(32).toString("hex"),
+    vapid:
+      env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
+        ? {
+            publicKey: env.VAPID_PUBLIC_KEY,
+            privateKey: env.VAPID_PRIVATE_KEY,
+            subject: env.VAPID_SUBJECT || "mailto:admin@example.com",
+          }
+        : null,
   };
 }
