@@ -30,6 +30,8 @@ export interface Conversation {
   optedOut: boolean;
   createdAt: string;
   lastMessage?: Message | null;
+  /** From the imported address book; displayName takes precedence. */
+  contactName?: string | null;
 }
 
 export type RealtimeEvent =
@@ -37,11 +39,24 @@ export type RealtimeEvent =
   | { type: "message.status"; message: Message }
   | { type: "conversation.read"; conversationId: string }
   | { type: "conversation.updated"; conversation: Conversation }
-  | { type: "conversation.deleted"; conversationId: string };
+  | { type: "conversation.deleted"; conversationId: string }
+  | { type: "contacts.updated" };
 
 export interface SearchHit {
   conversation: Conversation;
   message: Message;
+}
+
+export interface Contact {
+  id: string;
+  phone: string;
+  name: string;
+}
+
+export interface ImportResult {
+  contactsImported: number;
+  numbersImported: number;
+  skippedNumbers: number;
 }
 
 export class ApiError extends Error {
@@ -122,6 +137,19 @@ export const api = {
     request<{ message: Message }>(`/api/messages/${messageId}/retry`, {
       method: "POST",
     }),
+  contacts: () =>
+    request<{ contacts: Contact[]; count: number }>("/api/contacts"),
+  importContacts: (text: string, filename: string) =>
+    request<ImportResult>("/api/contacts/import", {
+      method: "POST",
+      headers: {
+        "content-type": filename.toLowerCase().endsWith(".csv")
+          ? "text/csv"
+          : "text/vcard",
+      },
+      body: text,
+    }),
+  clearContacts: () => request<void>("/api/contacts", { method: "DELETE" }),
   search: async (q: string) =>
     (await request<{ results: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`))
       .results,

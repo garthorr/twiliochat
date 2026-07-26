@@ -72,6 +72,22 @@ export const attachments = pgTable("attachments", {
     .defaultNow(),
 });
 
+/**
+ * Address book keyed by phone number, so a name applies to every thread with
+ * that person — including ones that don't exist yet.
+ */
+export const contacts = pgTable("contacts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  phone: text("phone").notNull().unique(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const pushSubscriptions = pgTable("push_subscriptions", {
   id: uuid("id").primaryKey().defaultRandom(),
   endpoint: text("endpoint").notNull().unique(),

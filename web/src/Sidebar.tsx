@@ -42,6 +42,7 @@ export function Sidebar({
   onArchive,
   onDelete,
   onToggleArchived,
+  onOpenContacts,
   onLogout,
 }: {
   conversations: Conversation[];
@@ -52,6 +53,7 @@ export function Sidebar({
   onArchive: (id: string, archived: boolean) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onToggleArchived: () => void;
+  onOpenContacts: () => void;
   onLogout: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -190,6 +192,31 @@ export function Sidebar({
                 strokeWidth="1.8"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            className="icon-button"
+            title="Contacts"
+            aria-label="Contacts"
+            onClick={onOpenContacts}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M6 3h13v18H6zM3 7h3M3 12h3M3 17h3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="12.5" cy="10" r="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+              <path
+                d="M9 16c0-2 1.6-3 3.5-3s3.5 1 3.5 3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
               />
             </svg>
           </button>

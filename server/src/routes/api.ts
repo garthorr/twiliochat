@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Config } from "../config.js";
 import type { Hub } from "../realtime.js";
+import { namesForNumbers, resolveName } from "../services/contacts.js";
 import { deleteMediaFiles } from "../services/media.js";
 import type { Db } from "../services/messaging.js";
 import {
@@ -45,14 +46,27 @@ export function registerApiRoutes(
   app: FastifyInstance,
   { config, db, sender, hub }: ApiDeps,
 ): void {
+  /** Attach address-book names; an explicit per-thread rename still wins. */
+  async function withContactNames<T extends { participants: string[] }>(
+    rows: T[],
+  ): Promise<Array<T & { contactName: string | null }>> {
+    const names = await namesForNumbers(
+      db,
+      [...new Set(rows.flatMap((r) => r.participants))],
+    );
+    return rows.map((r) => ({
+      ...r,
+      contactName: resolveName(r as never, names),
+    }));
+  }
+
   app.get<{ Querystring: { archived?: string } }>(
     "/api/conversations",
     async (req) => {
-      return {
-        conversations: await listConversations(db, {
-          archived: req.query.archived === "true",
-        }),
-      };
+      const rows = await listConversations(db, {
+        archived: req.query.archived === "true",
+      });
+      return { conversations: await withContactNames(rows) };
     },
   );
 
@@ -71,7 +85,8 @@ export function registerApiRoutes(
         before,
         limit: req.query.limit ? Number(req.query.limit) : undefined,
       });
-      return { conversation, ...page };
+      const [withName] = await withContactNames([conversation]);
+      return { conversation: withName ?? conversation, ...page };
     },
   );
 

@@ -7,7 +7,11 @@ export function formatNumber(raw: string): string {
 }
 
 export function conversationName(c: Conversation): string {
-  return c.displayName ?? c.participants.map(formatNumber).join(", ");
+  return (
+    c.displayName ??
+    c.contactName ??
+    c.participants.map(formatNumber).join(", ")
+  );
 }
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -67,8 +71,9 @@ export function avatarHue(seed: string): number {
 }
 
 export function avatarInitials(c: Conversation): string | null {
-  if (!c.displayName) return null;
-  const parts = c.displayName.trim().split(/\s+/);
+  const name = c.displayName ?? c.contactName;
+  if (!name) return null;
+  const parts = name.trim().split(/\s+/);
   return parts
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase() ?? "")

@@ -13,6 +13,7 @@ import { Hub } from "./realtime.js";
 import type { PushSender } from "./push.js";
 import { registerApiRoutes } from "./routes/api.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerContactRoutes } from "./routes/contacts.js";
 import { registerPushRoutes } from "./routes/push.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import type { MediaFetcher } from "./services/media.js";
@@ -45,6 +46,12 @@ export async function buildApp({
 
   // Twilio webhooks arrive as application/x-www-form-urlencoded.
   await app.register(fastifyFormbody);
+  // Contact imports are posted as a raw vCard/CSV body.
+  app.addContentTypeParser(
+    ["text/plain", "text/csv", "text/vcard", "text/x-vcard"],
+    { parseAs: "string" },
+    (_req, body, done) => done(null, body),
+  );
   await app.register(fastifyCookie, { secret: config.sessionSecret });
   await app.register(fastifyWebsocket);
   // Global limiter is opt-in per route; see login and send routes.
@@ -120,6 +127,7 @@ export async function buildApp({
     });
     registerApiRoutes(app, { config, db, sender: sender ?? null, hub });
     registerPushRoutes(app, { config, db });
+    registerContactRoutes(app, { db, hub });
   }
 
   if (config.publicDir && fs.existsSync(config.publicDir)) {

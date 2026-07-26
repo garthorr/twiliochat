@@ -3,6 +3,7 @@ import twilio from "twilio";
 import type { Config } from "../config.js";
 import type { Hub } from "../realtime.js";
 import type { PushSender } from "../push.js";
+import { namesForNumbers, resolveName } from "../services/contacts.js";
 import { addAttachments, optOutIntent, setOptedOut } from "../services/messaging.js";
 import type { MediaFetcher } from "../services/media.js";
 import { notifyAll } from "../services/push.js";
@@ -139,7 +140,10 @@ export function registerWebhookRoutes(
         "inbound message recorded",
       );
       if (pushSender) {
-        const title = conversation.displayName ?? formatNumberForNotification(from);
+        const names = await namesForNumbers(db, conversation.participants);
+        const title =
+          resolveName(conversation, names) ??
+          formatNumberForNotification(from);
         const text = result.message.body;
         // Fire-and-forget: never let a slow push service delay the TwiML reply.
         void notifyAll(db, pushSender, {

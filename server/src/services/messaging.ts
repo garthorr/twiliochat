@@ -182,6 +182,8 @@ export async function updateMessageStatusBySid(
 
 export interface ConversationSummary extends Conversation {
   lastMessage: Message | null;
+  /** Name from the imported address book, if any (displayName still wins). */
+  contactName?: string | null;
 }
 
 export async function listConversations(

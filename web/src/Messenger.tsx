@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import type { Conversation, Message, RealtimeEvent } from "./api";
+import { Contacts } from "./Contacts";
 import { Sidebar } from "./Sidebar";
 import { playReceived, playSent } from "./sounds";
 import { Thread } from "./Thread";
@@ -20,6 +21,7 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
   const [messagesByConv, setMessagesByConv] = useState<Record<string, Message[]>>({});
   const [hasMoreByConv, setHasMoreByConv] = useState<Record<string, boolean>>({});
   const [showArchived, setShowArchived] = useState(false);
+  const [showContacts, setShowContacts] = useState(false);
   const selectedRef = useRef<Selection>(null);
   selectedRef.current = selected;
   const messagesByConvRef = useRef(messagesByConv);
@@ -126,6 +128,9 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
               )
             : [...prev, updated].sort(byRecency);
         });
+      } else if (event.type === "contacts.updated") {
+        // Names changed for potentially every thread.
+        void refreshConversations();
       } else if (event.type === "conversation.deleted") {
         setConversations((prev) =>
           prev.filter((c) => c.id !== event.conversationId),
@@ -133,7 +138,7 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
         if (selectedRef.current === event.conversationId) setSelected(null);
       }
     },
-    [upsertMessage],
+    [upsertMessage, refreshConversations],
   );
   const handleEventRef = useRef(handleEvent);
   handleEventRef.current = handleEvent;
@@ -272,8 +277,17 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
         onArchive={archive}
         onDelete={remove}
         onToggleArchived={toggleArchived}
+        onOpenContacts={() => setShowContacts(true)}
         onLogout={logout}
       />
+      {showContacts && (
+        <Contacts
+          onClose={() => {
+            setShowContacts(false);
+            void refreshConversations();
+          }}
+        />
+      )}
       <Thread
         key={selected ?? "none"}
         mode={selected === "new" ? "new" : activeConversation ? "existing" : "none"}

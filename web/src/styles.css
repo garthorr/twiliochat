@@ -652,6 +652,101 @@ button {
   }
 }
 
+/* ---------- sheets (contacts) ---------- */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  padding: 20px;
+}
+
+.sheet {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  width: min(460px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sheet-header h2 {
+  font-size: 17px;
+}
+
+.sheet-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sheet-steps {
+  font-size: 13px;
+  line-height: 1.6;
+  padding-left: 20px;
+  color: var(--text);
+}
+
+.sheet-success {
+  font-size: 13px;
+  color: #248a3d;
+}
+
+.sheet-error {
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.sheet-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  line-height: 1.5;
+}
+
+.sheet-danger {
+  align-self: flex-start;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contact-sample {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contact-sample-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.sheet input[type="file"] {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 /* ---------- composer ---------- */
 
 .composer {

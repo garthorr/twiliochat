@@ -13,7 +13,8 @@ export type RealtimeEvent =
   | { type: "message.status"; message: MessageWithAttachments }
   | { type: "conversation.read"; conversationId: string }
   | { type: "conversation.updated"; conversation: Conversation }
-  | { type: "conversation.deleted"; conversationId: string };
+  | { type: "conversation.deleted"; conversationId: string }
+  | { type: "contacts.updated" };
 
 const OPEN = 1;
 
