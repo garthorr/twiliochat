@@ -12,7 +12,15 @@ export function registerAuthRoutes(
   app: FastifyInstance,
   { config }: { config: Config },
 ): void {
-  app.post("/api/login", async (req, reply) => {
+  app.post("/api/login", {
+    config: {
+      // A single password on a public URL must not be brute-forceable.
+      rateLimit: {
+        max: config.maxLoginAttempts,
+        timeWindow: config.loginWindowMinutes * 60_000,
+      },
+    },
+  }, async (req, reply) => {
     if (!config.appPassword) {
       return reply.status(503).send({ error: "APP_PASSWORD not configured" });
     }

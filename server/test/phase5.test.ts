@@ -218,8 +218,10 @@ describe("retrying failed sends", () => {
   });
 
   async function sendFailing(): Promise<string> {
-    ctx.sender.failNextWith = Object.assign(new Error("blocked"), {
-      code: 21610,
+    // 30001 is a transient queue failure — retryable, unlike 21610 (opted out),
+    // which deliberately blocks retries. See hardening.test.ts for that path.
+    ctx.sender.failNextWith = Object.assign(new Error("queue overflow"), {
+      code: 30001,
     });
     const res = await ctx.inject({
       method: "POST",
@@ -255,15 +257,15 @@ describe("retrying failed sends", () => {
 
   it("marks it failed again when the retry also fails", async () => {
     const id = await sendFailing();
-    ctx.sender.failNextWith = Object.assign(new Error("still blocked"), {
-      code: 21610,
+    ctx.sender.failNextWith = Object.assign(new Error("still overflowing"), {
+      code: 30001,
     });
     const retry = await ctx.inject({
       method: "POST",
       url: `/api/messages/${id}/retry`,
     });
     expect(retry.json().message.status).toBe("failed");
-    expect(retry.json().message.errorCode).toBe("21610");
+    expect(retry.json().message.errorCode).toBe("30001");
   });
 
   it("refuses to retry a message that did not fail", async () => {

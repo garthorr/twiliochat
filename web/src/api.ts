@@ -27,6 +27,7 @@ export interface Conversation {
   lastMessageAt: string | null;
   unreadCount: number;
   archived: boolean;
+  optedOut: boolean;
   createdAt: string;
   lastMessage?: Message | null;
 }
@@ -35,7 +36,8 @@ export type RealtimeEvent =
   | { type: "message.new"; conversation: Conversation; message: Message }
   | { type: "message.status"; message: Message }
   | { type: "conversation.read"; conversationId: string }
-  | { type: "conversation.updated"; conversation: Conversation };
+  | { type: "conversation.updated"; conversation: Conversation }
+  | { type: "conversation.deleted"; conversationId: string };
 
 export interface SearchHit {
   conversation: Conversation;
@@ -79,13 +81,21 @@ export const api = {
       body: JSON.stringify({ password }),
     }),
   logout: () => request<void>("/api/logout", { method: "POST" }),
-  conversations: async () =>
+  conversations: async (archived = false) =>
     (
-      await request<{ conversations: Conversation[] }>("/api/conversations")
+      await request<{ conversations: Conversation[] }>(
+        `/api/conversations${archived ? "?archived=true" : ""}`,
+      )
     ).conversations,
-  messages: (conversationId: string) =>
-    request<{ conversation: Conversation; messages: Message[] }>(
-      `/api/conversations/${conversationId}/messages`,
+  messages: (conversationId: string, before?: string) =>
+    request<{
+      conversation: Conversation;
+      messages: Message[];
+      hasMore: boolean;
+    }>(
+      `/api/conversations/${conversationId}/messages${
+        before ? `?before=${encodeURIComponent(before)}` : ""
+      }`,
     ),
   send: (to: string, body: string) =>
     request<{ conversationId: string; message: Message }>("/api/messages", {
@@ -101,6 +111,13 @@ export const api = {
       `/api/conversations/${conversationId}`,
       { method: "PATCH", body: JSON.stringify({ displayName }) },
     ),
+  setArchived: (conversationId: string, archived: boolean) =>
+    request<{ conversation: Conversation }>(
+      `/api/conversations/${conversationId}`,
+      { method: "PATCH", body: JSON.stringify({ archived }) },
+    ),
+  deleteConversation: (conversationId: string) =>
+    request<void>(`/api/conversations/${conversationId}`, { method: "DELETE" }),
   retry: (messageId: string) =>
     request<{ message: Message }>(`/api/messages/${messageId}/retry`, {
       method: "POST",

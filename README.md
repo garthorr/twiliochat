@@ -24,6 +24,10 @@ message sounds, and retry of failed sends.
 - **Retry** — failed sends show "Not Delivered" with a Try Again button
 - **PWA** — installable, reads offline, queues sends made offline, push
   notifications
+- **Opt-out aware** — when someone replies STOP, the thread shows a banner and
+  the composer is disabled, because Twilio blocks those messages anyway
+- **Archive and delete** — including cleanup of stored MMS files
+- **Cost and abuse guards** — per-minute and daily send caps, login rate limiting
 
 ## Stack
 

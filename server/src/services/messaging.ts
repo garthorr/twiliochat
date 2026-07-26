@@ -1,4 +1,4 @@
-import { desc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, lt, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import * as schema from "../db/schema.js";
 import { attachments, conversations, messages } from "../db/schema.js";
@@ -186,11 +186,12 @@ export interface ConversationSummary extends Conversation {
 
 export async function listConversations(
   db: Db,
+  opts: { archived?: boolean } = {},
 ): Promise<ConversationSummary[]> {
   const convos = await db
     .select()
     .from(conversations)
-    .where(eq(conversations.archived, false))
+    .where(eq(conversations.archived, opts.archived ?? false))
     .orderBy(desc(conversations.lastMessageAt));
   if (convos.length === 0) return [];
 
@@ -254,20 +255,49 @@ export async function listAttachments(
   return byMessage;
 }
 
+export const MESSAGE_PAGE_SIZE = 50;
+
+export interface MessagePage {
+  messages: MessageWithAttachments[];
+  hasMore: boolean;
+}
+
+/**
+ * One page of a thread, newest-last. Keyset pagination on `created_at` —
+ * `before` walks backwards through history and is served by the existing
+ * (conversation_id, created_at) index.
+ */
 export async function listMessages(
   db: Db,
   conversationId: string,
-): Promise<MessageWithAttachments[]> {
+  opts: { before?: Date; limit?: number } = {},
+): Promise<MessagePage> {
+  const limit = Math.min(opts.limit ?? MESSAGE_PAGE_SIZE, 200);
   const rows = await db
     .select()
     .from(messages)
-    .where(eq(messages.conversationId, conversationId))
-    .orderBy(messages.createdAt);
+    .where(
+      opts.before
+        ? and(
+            eq(messages.conversationId, conversationId),
+            lt(messages.createdAt, opts.before),
+          )
+        : eq(messages.conversationId, conversationId),
+    )
+    // Newest first so the limit takes the most recent page, then reversed.
+    .orderBy(desc(messages.createdAt))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const page = (hasMore ? rows.slice(0, limit) : rows).reverse();
   const media = await listAttachments(
     db,
-    rows.map((m) => m.id),
+    page.map((m) => m.id),
   );
-  return rows.map((m) => ({ ...m, attachments: media.get(m.id) ?? [] }));
+  return {
+    messages: page.map((m) => ({ ...m, attachments: media.get(m.id) ?? [] })),
+    hasMore,
+  };
 }
 
 export async function markConversationRead(
@@ -278,6 +308,100 @@ export async function markConversationRead(
     .update(conversations)
     .set({ unreadCount: 0 })
     .where(eq(conversations.id, conversationId));
+}
+
+/**
+ * Outbound messages sent in the trailing 24h. Counted in the database rather
+ * than in memory so a crash-loop can't reset the spend ceiling.
+ */
+export async function countRecentOutbound(db: Db): Promise<number> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(messages)
+    .where(
+      and(eq(messages.direction, "outbound"), gte(messages.createdAt, since)),
+    );
+  return rows[0]?.count ?? 0;
+}
+
+export async function setOptedOut(
+  db: Db,
+  conversationId: string,
+  optedOut: boolean,
+): Promise<Conversation | null> {
+  const updated = await db
+    .update(conversations)
+    .set({ optedOut })
+    .where(eq(conversations.id, conversationId))
+    .returning();
+  return updated[0] ?? null;
+}
+
+const OPT_OUT_KEYWORDS = new Set([
+  "stop",
+  "stopall",
+  "unsubscribe",
+  "end",
+  "quit",
+  "cancel",
+  "revoke",
+  "optout",
+]);
+const OPT_IN_KEYWORDS = new Set(["start", "unstop", "yes"]);
+
+/**
+ * Twilio itself acts on these keywords; we mirror the resulting state so the
+ * UI can stop offering a send that Twilio will reject with error 21610.
+ */
+export function optOutIntent(body: string): "out" | "in" | null {
+  const word = body.trim().toLowerCase().replace(/[.!]$/, "");
+  if (OPT_OUT_KEYWORDS.has(word)) return "out";
+  if (OPT_IN_KEYWORDS.has(word)) return "in";
+  return null;
+}
+
+export async function setArchived(
+  db: Db,
+  conversationId: string,
+  archived: boolean,
+): Promise<Conversation | null> {
+  const updated = await db
+    .update(conversations)
+    .set({ archived })
+    .where(eq(conversations.id, conversationId))
+    .returning();
+  return updated[0] ?? null;
+}
+
+/** Attachment paths for a conversation, so their files can be unlinked. */
+export async function attachmentPathsForConversation(
+  db: Db,
+  conversationId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ path: attachments.path })
+    .from(attachments)
+    .innerJoin(messages, eq(attachments.messageId, messages.id))
+    .where(eq(messages.conversationId, conversationId));
+  return rows.map((r) => r.path);
+}
+
+export async function deleteConversation(
+  db: Db,
+  conversationId: string,
+): Promise<boolean> {
+  const deleted = await db
+    .delete(conversations)
+    .where(eq(conversations.id, conversationId))
+    .returning();
+  return deleted.length > 0;
+}
+
+/** Every stored attachment path, for the startup orphan sweep. */
+export async function allAttachmentPaths(db: Db): Promise<Set<string>> {
+  const rows = await db.select({ path: attachments.path }).from(attachments);
+  return new Set(rows.map((r) => r.path));
 }
 
 export async function setDisplayName(

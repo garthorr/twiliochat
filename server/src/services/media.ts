@@ -38,6 +38,37 @@ export interface MediaFetcher {
   fetchAndStore(url: string, contentType: string): Promise<StoredMedia>;
 }
 
+/** Remove stored media files; missing files are not an error. */
+export async function deleteMediaFiles(
+  mediaDir: string,
+  paths: string[],
+): Promise<void> {
+  await Promise.all(
+    paths.map((p) =>
+      fs.rm(path.join(mediaDir, path.basename(p)), { force: true }),
+    ),
+  );
+}
+
+/**
+ * Delete media files with no attachment row — leftovers from deletions that
+ * failed partway, so the volume doesn't grow forever.
+ */
+export async function sweepOrphanedMedia(
+  mediaDir: string,
+  known: Set<string>,
+): Promise<number> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(mediaDir);
+  } catch {
+    return 0;
+  }
+  const orphans = entries.filter((name) => !known.has(name));
+  await deleteMediaFiles(mediaDir, orphans);
+  return orphans.length;
+}
+
 export function createMediaFetcher(
   mediaDir: string,
   twilio: TwilioConfig,

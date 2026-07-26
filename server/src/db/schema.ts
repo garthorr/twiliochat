@@ -19,6 +19,8 @@ export const conversations = pgTable(
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     unreadCount: integer("unread_count").notNull().default(0),
     archived: boolean("archived").notNull().default(false),
+    // Mirrors Twilio's own opt-out state (it rejects sends with error 21610).
+    optedOut: boolean("opted_out").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

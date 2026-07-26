@@ -36,14 +36,22 @@ function Avatar({ conversation }: { conversation: Conversation }) {
 export function Sidebar({
   conversations,
   selected,
+  showArchived,
   onSelect,
   onCompose,
+  onArchive,
+  onDelete,
+  onToggleArchived,
   onLogout,
 }: {
   conversations: Conversation[];
   selected: Selection;
+  showArchived: boolean;
   onSelect: (id: string) => void;
   onCompose: () => void;
+  onArchive: (id: string, archived: boolean) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onToggleArchived: () => void;
   onLogout: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -93,7 +101,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <header className="sidebar-header">
-        <h1>Messages</h1>
+        <h1>{showArchived ? "Archived" : "Messages"}</h1>
         <div className="sidebar-actions">
           <button
             className={`icon-button ${sounds ? "active" : ""}`}
@@ -186,6 +194,24 @@ export function Sidebar({
             </svg>
           </button>
           <button
+            className={`icon-button ${showArchived ? "active" : ""}`}
+            title={showArchived ? "Back to Messages" : "Show Archived"}
+            aria-label="Toggle archived"
+            aria-pressed={showArchived}
+            onClick={onToggleArchived}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3 6h18v3H3zM5 9v10h14V9M10 13h4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <button
             className="icon-button"
             title="Sign Out"
             aria-label="Sign Out"
@@ -218,28 +244,73 @@ export function Sidebar({
           </p>
         )}
         {visible.map((c) => (
-          <button
+          <div
             key={c.id}
             className={`conversation-row ${selected === c.id ? "selected" : ""}`}
-            onClick={() => onSelect(c.id)}
           >
-            <span className={`unread-dot ${c.unreadCount > 0 ? "on" : ""}`} />
-            <Avatar conversation={c} />
-            <span className="row-main">
-              <span className="row-top">
-                <span className="row-name">{conversationName(c)}</span>
-                {c.lastMessageAt && (
-                  <span className="row-time">{sidebarTime(c.lastMessageAt)}</span>
-                )}
+            <button className="row-open" onClick={() => onSelect(c.id)}>
+              <span className={`unread-dot ${c.unreadCount > 0 ? "on" : ""}`} />
+              <Avatar conversation={c} />
+              <span className="row-main">
+                <span className="row-top">
+                  <span className="row-name">{conversationName(c)}</span>
+                  {c.lastMessageAt && (
+                    <span className="row-time">{sidebarTime(c.lastMessageAt)}</span>
+                  )}
+                </span>
+                <span className="row-preview">
+                  {c.lastMessage
+                    ? (c.lastMessage.direction === "outbound" ? "You: " : "") +
+                      c.lastMessage.body
+                    : ""}
+                </span>
               </span>
-              <span className="row-preview">
-                {c.lastMessage
-                  ? (c.lastMessage.direction === "outbound" ? "You: " : "") +
-                    c.lastMessage.body
-                  : ""}
-              </span>
-            </span>
-          </button>
+            </button>
+            <div className="row-actions">
+              <button
+                className="row-action"
+                title={showArchived ? "Unarchive" : "Archive"}
+                aria-label={showArchived ? "Unarchive" : "Archive"}
+                onClick={() => void onArchive(c.id, !showArchived)}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M3 6h18v3H3zM5 9v10h14V9M10 13h4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+              <button
+                className="row-action"
+                title="Delete"
+                aria-label="Delete conversation"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Delete the conversation with ${conversationName(c)}? This removes its messages and any photos, and cannot be undone.`,
+                    )
+                  ) {
+                    void onDelete(c.id);
+                  }
+                }}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M5 7h14M10 7V5h4v2M6 7l1 12h10l1-12M10 11v5M14 11v5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
         ))}
 
         {hits.length > 0 && (
@@ -248,7 +319,7 @@ export function Sidebar({
             {hits.map((hit) => (
               <button
                 key={hit.message.id}
-                className="conversation-row"
+                className="conversation-row row-open"
                 onClick={() => onSelect(hit.conversation.id)}
               >
                 <span className="unread-dot" />

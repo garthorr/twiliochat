@@ -18,21 +18,51 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Selection>(null);
   const [messagesByConv, setMessagesByConv] = useState<Record<string, Message[]>>({});
+  const [hasMoreByConv, setHasMoreByConv] = useState<Record<string, boolean>>({});
+  const [showArchived, setShowArchived] = useState(false);
   const selectedRef = useRef<Selection>(null);
   selectedRef.current = selected;
+  const messagesByConvRef = useRef(messagesByConv);
+  messagesByConvRef.current = messagesByConv;
+  const showArchivedRef = useRef(showArchived);
+  showArchivedRef.current = showArchived;
 
   const refreshConversations = useCallback(async () => {
     try {
-      setConversations((await api.conversations()).sort(byRecency));
+      setConversations(
+        (await api.conversations(showArchivedRef.current)).sort(byRecency),
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) onLogout();
     }
   }, [onLogout]);
 
   const loadMessages = useCallback(async (conversationId: string) => {
-    const { messages } = await api.messages(conversationId);
+    const { messages, hasMore } = await api.messages(conversationId);
     setMessagesByConv((prev) => ({ ...prev, [conversationId]: messages }));
+    setHasMoreByConv((prev) => ({ ...prev, [conversationId]: hasMore }));
   }, []);
+
+  /** Prepend the previous page when the user scrolls to the top of a thread. */
+  const loadOlder = useCallback(
+    async (conversationId: string) => {
+      const existing = messagesByConvRef.current[conversationId];
+      const oldest = existing?.[0];
+      if (!oldest) return;
+      const { messages, hasMore } = await api.messages(
+        conversationId,
+        oldest.createdAt,
+      );
+      if (messages.length > 0) {
+        setMessagesByConv((prev) => ({
+          ...prev,
+          [conversationId]: [...messages, ...(prev[conversationId] ?? [])],
+        }));
+      }
+      setHasMoreByConv((prev) => ({ ...prev, [conversationId]: hasMore }));
+    },
+    [],
+  );
 
   const upsertMessage = useCallback((message: Message) => {
     setMessagesByConv((prev) => {
@@ -82,13 +112,25 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
           ),
         );
       } else if (event.type === "conversation.updated") {
+        const updated = event.conversation;
+        setConversations((prev) => {
+          // Archiving moves a thread out of (or into) the current list.
+          if (updated.archived !== showArchivedRef.current) {
+            return prev.filter((c) => c.id !== updated.id);
+          }
+          return prev.some((c) => c.id === updated.id)
+            ? prev.map((c) =>
+                c.id === updated.id
+                  ? { ...updated, lastMessage: c.lastMessage }
+                  : c,
+              )
+            : [...prev, updated].sort(byRecency);
+        });
+      } else if (event.type === "conversation.deleted") {
         setConversations((prev) =>
-          prev.map((c) =>
-            c.id === event.conversation.id
-              ? { ...event.conversation, lastMessage: c.lastMessage }
-              : c,
-          ),
+          prev.filter((c) => c.id !== event.conversationId),
         );
+        if (selectedRef.current === event.conversationId) setSelected(null);
       }
     },
     [upsertMessage],
@@ -185,6 +227,31 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
     [],
   );
 
+  const archive = useCallback(
+    async (conversationId: string, archived: boolean) => {
+      await api.setArchived(conversationId, archived);
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      if (selectedRef.current === conversationId) setSelected(null);
+    },
+    [],
+  );
+
+  const remove = useCallback(async (conversationId: string) => {
+    await api.deleteConversation(conversationId);
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    if (selectedRef.current === conversationId) setSelected(null);
+  }, []);
+
+  const toggleArchived = useCallback(() => {
+    // Set the ref synchronously: refreshConversations reads it immediately,
+    // and a state updater would not have run yet.
+    const next = !showArchivedRef.current;
+    showArchivedRef.current = next;
+    setShowArchived(next);
+    setSelected(null);
+    void refreshConversations();
+  }, [refreshConversations]);
+
   const logout = useCallback(() => {
     api.logout().finally(onLogout);
   }, [onLogout]);
@@ -199,8 +266,12 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
       <Sidebar
         conversations={conversations}
         selected={selected}
+        showArchived={showArchived}
         onSelect={select}
         onCompose={() => setSelected("new")}
+        onArchive={archive}
+        onDelete={remove}
+        onToggleArchived={toggleArchived}
         onLogout={logout}
       />
       <Thread
@@ -210,6 +281,10 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
         messages={
           activeConversation ? (messagesByConv[activeConversation.id] ?? []) : []
         }
+        hasMore={
+          activeConversation ? (hasMoreByConv[activeConversation.id] ?? false) : false
+        }
+        onLoadOlder={loadOlder}
         onSend={send}
         onRetry={retry}
         onRename={rename}

@@ -17,7 +17,7 @@ export const TEST_PUBLIC_URL = "https://twiliochat.example.test";
 export const TEST_FROM_NUMBER = "+15005550006";
 export const TEST_PASSWORD = "test-password-not-a-secret";
 
-export function testConfig(): Config {
+export function testConfig(overrides: NodeJS.ProcessEnv = {}): Config {
   return loadConfig({
     TWILIO_ACCOUNT_SID: "ACtest",
     TWILIO_AUTH_TOKEN: TEST_AUTH_TOKEN,
@@ -28,6 +28,7 @@ export function testConfig(): Config {
     // Structurally valid VAPID keys are not needed: the sender is faked.
     VAPID_PUBLIC_KEY: "test-vapid-public-key",
     VAPID_PRIVATE_KEY: "test-vapid-private-key",
+    ...overrides,
   });
 }
 
@@ -128,9 +129,12 @@ export function createFakeMediaFetcher(): FakeMediaFetcher {
   return fetcher;
 }
 
-export async function createTestApp() {
-  const config = testConfig();
-  const db = await createTestDb();
+export async function createTestApp(
+  overrides: NodeJS.ProcessEnv = {},
+  existingDb?: Db,
+) {
+  const config = testConfig(overrides);
+  const db = existingDb ?? (await createTestDb());
   const sender = createFakeSender();
   const pushSender = createFakePushSender();
   const mediaFetcher = createFakeMediaFetcher();

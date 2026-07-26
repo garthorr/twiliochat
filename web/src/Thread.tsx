@@ -61,19 +61,49 @@ function Attachments({
 
 function MessageList({
   messages,
+  hasMore,
+  optedOut,
   onRetry,
+  onLoadOlder,
 }: {
   messages: Message[];
+  hasMore: boolean;
+  optedOut: boolean;
   onRetry: (messageId: string) => Promise<void>;
+  onLoadOlder: () => Promise<void>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const oldestIdRef = useRef<string | null>(null);
+  const prevHeightRef = useRef(0);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const oldestId = messages[0]?.id ?? null;
+    if (oldestIdRef.current && oldestId !== oldestIdRef.current) {
+      // Older page prepended — hold the viewport where the user was reading.
+      el.scrollTop = el.scrollHeight - prevHeightRef.current;
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+    oldestIdRef.current = oldestId;
+    prevHeightRef.current = el.scrollHeight;
   }, [messages]);
+
+  const onScroll = async () => {
+    const el = scrollRef.current;
+    if (!el || !hasMore || loadingOlder || el.scrollTop > 80) return;
+    setLoadingOlder(true);
+    prevHeightRef.current = el.scrollHeight;
+    try {
+      await onLoadOlder();
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
 
   const rows: React.ReactNode[] = [];
   messages.forEach((m, i) => {
@@ -122,7 +152,7 @@ function MessageList({
         >
           {statusLabel(m.status)}
           {m.status === "failed" && m.errorCode ? ` (error ${m.errorCode})` : ""}
-          {m.status === "failed" && (
+          {m.status === "failed" && !optedOut && (
             <button
               className="retry-button"
               disabled={retrying === m.id}
@@ -144,8 +174,15 @@ function MessageList({
   });
 
   return (
-    <div className="message-scroll" ref={scrollRef}>
-      <div className="message-list">{rows}</div>
+    <div className="message-scroll" ref={scrollRef} onScroll={() => void onScroll()}>
+      <div className="message-list">
+        {hasMore && (
+          <div className="load-older">
+            {loadingOlder ? "Loading earlier messages…" : "Scroll up for more"}
+          </div>
+        )}
+        {rows}
+      </div>
       {lightbox && (
         <div
           className="lightbox"
@@ -163,9 +200,11 @@ function MessageList({
 function Composer({
   onSend,
   autoFocus,
+  disabled,
 }: {
   onSend: (body: string) => Promise<void>;
   autoFocus?: boolean;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -200,7 +239,8 @@ function Composer({
           ref={areaRef}
           rows={1}
           autoFocus={autoFocus}
-          placeholder="Text Message"
+          disabled={disabled}
+          placeholder={disabled ? "Messaging blocked" : "Text Message"}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
@@ -217,7 +257,7 @@ function Composer({
           className={`send-button ${draft.trim() ? "active" : ""}`}
           aria-label="Send"
           onClick={() => void submit()}
-          disabled={!draft.trim()}
+          disabled={disabled || !draft.trim()}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -239,6 +279,8 @@ export function Thread({
   mode,
   conversation,
   messages,
+  hasMore,
+  onLoadOlder,
   onSend,
   onRetry,
   onRename,
@@ -247,12 +289,15 @@ export function Thread({
   mode: "existing" | "new" | "none";
   conversation: Conversation | null;
   messages: Message[];
+  hasMore: boolean;
+  onLoadOlder: (conversationId: string) => Promise<void>;
   onSend: (to: string, body: string) => Promise<void>;
   onRetry: (messageId: string) => Promise<void>;
   onRename: (conversationId: string, displayName: string | null) => Promise<void>;
   onBack: () => void;
 }) {
   const [composeTo, setComposeTo] = useState("");
+  const optedOut = conversation?.optedOut ?? false;
 
   const promptRename = () => {
     if (!conversation) return;
@@ -329,9 +374,22 @@ export function Thread({
           />
         </div>
       )}
-      <MessageList messages={messages} onRetry={onRetry} />
+      {optedOut && (
+        <div className="optout-banner" role="status">
+          <strong>This person has opted out.</strong> They replied STOP, so
+          Twilio blocks messages to them until they text START.
+        </div>
+      )}
+      <MessageList
+        messages={messages}
+        hasMore={hasMore}
+        optedOut={optedOut}
+        onRetry={onRetry}
+        onLoadOlder={() => onLoadOlder(conversation!.id)}
+      />
       <Composer
         autoFocus={mode === "existing"}
+        disabled={optedOut}
         onSend={(body) =>
           onSend(
             mode === "new" ? composeTo : conversation!.participants[0]!,

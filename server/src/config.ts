@@ -19,6 +19,12 @@ export interface Config {
   vapid: VapidConfig | null;
   /** Directory where inbound MMS media is re-hosted. */
   mediaDir: string;
+  /** Cost guards on outbound sending. */
+  maxSendsPerMinute: number;
+  maxSendsPerDay: number;
+  /** Brute-force guard on the login endpoint. */
+  maxLoginAttempts: number;
+  loginWindowMinutes: number;
 }
 
 export interface VapidConfig {
@@ -50,6 +56,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // Without a configured secret, sessions just reset on restart.
     sessionSecret: env.SESSION_SECRET || randomBytes(32).toString("hex"),
     mediaDir: env.MEDIA_DIR ?? "/data/media",
+    maxSendsPerMinute: Number(env.MAX_SENDS_PER_MINUTE ?? 10),
+    maxSendsPerDay: Number(env.MAX_SENDS_PER_DAY ?? 250),
+    maxLoginAttempts: Number(env.MAX_LOGIN_ATTEMPTS ?? 5),
+    loginWindowMinutes: Number(env.LOGIN_WINDOW_MINUTES ?? 15),
     vapid:
       env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
         ? {

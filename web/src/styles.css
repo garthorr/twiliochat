@@ -227,11 +227,21 @@ button {
 .conversation-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   padding: 9px 8px 9px 2px;
   border-radius: 10px;
   text-align: left;
   width: 100%;
+}
+
+/* The clickable body of a row; actions sit beside it as real buttons. */
+.row-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
 }
 
 .conversation-row:hover {
@@ -577,6 +587,69 @@ button {
 
 .rename-button {
   margin-left: auto;
+}
+
+.optout-banner {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.load-older {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 8px 0 4px;
+}
+
+.composer textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.row-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.conversation-row:hover .row-actions,
+.conversation-row:focus-within .row-actions {
+  opacity: 1;
+}
+
+.row-action {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.row-action:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.conversation-row.selected .row-action {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.row-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+@media (max-width: 700px) {
+  .row-actions {
+    opacity: 1;
+  }
 }
 
 /* ---------- composer ---------- */

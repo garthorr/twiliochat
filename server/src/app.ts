@@ -1,5 +1,7 @@
 import fastifyCookie from "@fastify/cookie";
 import fastifyFormbody from "@fastify/formbody";
+import fastifyHelmet from "@fastify/helmet";
+import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify from "fastify";
@@ -45,6 +47,26 @@ export async function buildApp({
   await app.register(fastifyFormbody);
   await app.register(fastifyCookie, { secret: config.sessionSecret });
   await app.register(fastifyWebsocket);
+  // Global limiter is opt-in per route; see login and send routes.
+  await app.register(fastifyRateLimit, { global: false });
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        // Vite injects a small inline bootstrap; media/images are same-origin
+        // files plus blob/data URLs from the service worker cache.
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        mediaSrc: ["'self'", "blob:"],
+        connectSrc: ["'self'", "ws:", "wss:"],
+        objectSrc: ["'none'"],
+      },
+    },
+    // Cross-origin isolation would block nothing useful here but breaks
+    // installing the PWA from some browsers.
+    crossOriginEmbedderPolicy: false,
+  });
 
   app.addHook("preHandler", async (req, reply) => {
     const url = (req.url.split("?")[0] ?? "").replace(/\/+$/, "") || "/";

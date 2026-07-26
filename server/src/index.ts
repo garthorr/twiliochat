@@ -5,7 +5,8 @@ import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createDb, runMigrations } from "./db/client.js";
 import { createWebPushSender } from "./push.js";
-import { createMediaFetcher } from "./services/media.js";
+import { createMediaFetcher, sweepOrphanedMedia } from "./services/media.js";
+import { allAttachmentPaths } from "./services/messaging.js";
 import { createTwilioSender } from "./twilio.js";
 
 const config = loadConfig();
@@ -35,6 +36,15 @@ const app = await buildApp({
   pushSender,
   mediaFetcher,
 });
+
+// Drop media files left behind by interrupted deletions.
+const swept = await sweepOrphanedMedia(
+  config.mediaDir,
+  await allAttachmentPaths(db),
+).catch(() => 0);
+if (swept > 0) {
+  app.log.info({ swept }, "removed orphaned media files");
+}
 
 if (!config.appPassword) {
   app.log.warn("APP_PASSWORD not set — nobody can log in");

@@ -3,7 +3,7 @@ import twilio from "twilio";
 import type { Config } from "../config.js";
 import type { Hub } from "../realtime.js";
 import type { PushSender } from "../push.js";
-import { addAttachments } from "../services/messaging.js";
+import { addAttachments, optOutIntent, setOptedOut } from "../services/messaging.js";
 import type { MediaFetcher } from "../services/media.js";
 import { notifyAll } from "../services/push.js";
 import type { Db } from "../services/messaging.js";
@@ -114,9 +114,24 @@ export function registerWebhookRoutes(
         );
       }
 
+      // Twilio acts on STOP/START itself; mirror the state so the UI agrees.
+      let conversation = result.conversation;
+      const intent = optOutIntent(result.message.body);
+      if (intent) {
+        const updated = await setOptedOut(
+          db,
+          conversation.id,
+          intent === "out",
+        );
+        if (updated) {
+          conversation = updated;
+          hub.broadcast({ type: "conversation.updated", conversation });
+        }
+      }
+
       hub.broadcast({
         type: "message.new",
-        conversation: result.conversation,
+        conversation,
         message: { ...result.message, attachments: stored },
       });
       req.log.info(
@@ -124,14 +139,13 @@ export function registerWebhookRoutes(
         "inbound message recorded",
       );
       if (pushSender) {
-        const title =
-          result.conversation.displayName ?? formatNumberForNotification(from);
+        const title = conversation.displayName ?? formatNumberForNotification(from);
         const text = result.message.body;
         // Fire-and-forget: never let a slow push service delay the TwiML reply.
         void notifyAll(db, pushSender, {
           title,
           body: text.length > 120 ? `${text.slice(0, 119)}…` : text,
-          conversationId: result.conversation.id,
+          conversationId: conversation.id,
         }).catch((err) => req.log.warn({ err }, "web push fan-out failed"));
       }
     } else {
