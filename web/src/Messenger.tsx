@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import type { Conversation, Message, RealtimeEvent } from "./api";
 import { Sidebar } from "./Sidebar";
+import { playReceived, playSent } from "./sounds";
 import { Thread } from "./Thread";
 import { connectRealtime } from "./ws";
 
@@ -51,6 +52,7 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
       if (event.type === "message.new") {
         const { conversation, message } = event;
         upsertMessage(message);
+        if (message.direction === "inbound") playReceived();
         const isOpen = selectedRef.current === conversation.id;
         setConversations((prev) => {
           const rest = prev.filter((c) => c.id !== conversation.id);
@@ -77,6 +79,14 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
         setConversations((prev) =>
           prev.map((c) =>
             c.id === event.conversationId ? { ...c, unreadCount: 0 } : c,
+          ),
+        );
+      } else if (event.type === "conversation.updated") {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === event.conversation.id
+              ? { ...event.conversation, lastMessage: c.lastMessage }
+              : c,
           ),
         );
       }
@@ -142,6 +152,7 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
     async (to: string, body: string): Promise<void> => {
       const { conversationId, message } = await api.send(to, body);
       upsertMessage(message);
+      if (message.status !== "failed") playSent();
       if (selectedRef.current === "new") {
         await refreshConversations();
         setSelected(conversationId);
@@ -149,6 +160,29 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
       }
     },
     [upsertMessage, refreshConversations, loadMessages],
+  );
+
+  const retry = useCallback(
+    async (messageId: string): Promise<void> => {
+      const { message } = await api.retry(messageId);
+      upsertMessage(message);
+      if (message.status !== "failed") playSent();
+    },
+    [upsertMessage],
+  );
+
+  const rename = useCallback(
+    async (conversationId: string, displayName: string | null) => {
+      const { conversation } = await api.rename(conversationId, displayName);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversation.id
+            ? { ...conversation, lastMessage: c.lastMessage }
+            : c,
+        ),
+      );
+    },
+    [],
   );
 
   const logout = useCallback(() => {
@@ -177,6 +211,8 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
           activeConversation ? (messagesByConv[activeConversation.id] ?? []) : []
         }
         onSend={send}
+        onRetry={retry}
+        onRename={rename}
         onBack={() => setSelected(null)}
       />
     </div>

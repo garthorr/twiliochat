@@ -1,14 +1,20 @@
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import * as schema from "../db/schema.js";
-import { conversations, messages } from "../db/schema.js";
+import { attachments, conversations, messages } from "../db/schema.js";
 
 // Works for both the node-postgres db (runtime) and PGlite (tests).
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type Attachment = typeof attachments.$inferSelect;
 export type MessageStatus = Message["status"];
+
+/** A message plus its media, which is what clients always want to render. */
+export interface MessageWithAttachments extends Message {
+  attachments: Attachment[];
+}
 
 export class InvalidNumberError extends Error {
   constructor(raw: string) {
@@ -217,12 +223,51 @@ export async function getConversation(
   return rows[0] ?? null;
 }
 
-export async function listMessages(db: Db, conversationId: string): Promise<Message[]> {
+export async function addAttachments(
+  db: Db,
+  messageId: string,
+  media: Array<{ path: string; contentType: string; sizeBytes: number }>,
+): Promise<Attachment[]> {
+  if (media.length === 0) return [];
   return db
+    .insert(attachments)
+    .values(media.map((m) => ({ messageId, ...m })))
+    .returning();
+}
+
+export async function listAttachments(
+  db: Db,
+  messageIds: string[],
+): Promise<Map<string, Attachment[]>> {
+  const byMessage = new Map<string, Attachment[]>();
+  if (messageIds.length === 0) return byMessage;
+  const rows = await db
+    .select()
+    .from(attachments)
+    .where(inArray(attachments.messageId, messageIds))
+    .orderBy(attachments.createdAt);
+  for (const row of rows) {
+    const list = byMessage.get(row.messageId);
+    if (list) list.push(row);
+    else byMessage.set(row.messageId, [row]);
+  }
+  return byMessage;
+}
+
+export async function listMessages(
+  db: Db,
+  conversationId: string,
+): Promise<MessageWithAttachments[]> {
+  const rows = await db
     .select()
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(messages.createdAt);
+  const media = await listAttachments(
+    db,
+    rows.map((m) => m.id),
+  );
+  return rows.map((m) => ({ ...m, attachments: media.get(m.id) ?? [] }));
 }
 
 export async function markConversationRead(
@@ -233,4 +278,60 @@ export async function markConversationRead(
     .update(conversations)
     .set({ unreadCount: 0 })
     .where(eq(conversations.id, conversationId));
+}
+
+export async function setDisplayName(
+  db: Db,
+  conversationId: string,
+  displayName: string | null,
+): Promise<Conversation | null> {
+  const updated = await db
+    .update(conversations)
+    .set({ displayName })
+    .where(eq(conversations.id, conversationId))
+    .returning();
+  return updated[0] ?? null;
+}
+
+export interface SearchHit {
+  conversation: Conversation;
+  message: Message;
+}
+
+/** Full-text-ish search across message bodies, newest first. */
+export async function searchMessages(
+  db: Db,
+  query: string,
+  limit = 50,
+): Promise<SearchHit[]> {
+  const term = query.trim();
+  if (!term) return [];
+  const rows = await db
+    .select({ message: messages, conversation: conversations })
+    .from(messages)
+    .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+    .where(ilike(messages.body, `%${term}%`))
+    .orderBy(desc(messages.createdAt))
+    .limit(limit);
+  return rows;
+}
+
+export async function getMessage(
+  db: Db,
+  id: string,
+): Promise<Message | null> {
+  const rows = await db.select().from(messages).where(eq(messages.id, id));
+  return rows[0] ?? null;
+}
+
+export async function resetMessageForRetry(
+  db: Db,
+  id: string,
+): Promise<Message | null> {
+  const updated = await db
+    .update(messages)
+    .set({ status: "queued", errorCode: null, twilioSid: null })
+    .where(eq(messages.id, id))
+    .returning();
+  return updated[0] ?? null;
 }

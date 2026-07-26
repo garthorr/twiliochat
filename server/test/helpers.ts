@@ -8,6 +8,7 @@ import { buildApp } from "../src/app.js";
 import { loadConfig, type Config } from "../src/config.js";
 import * as schema from "../src/db/schema.js";
 import { PushGoneError, type PushSender } from "../src/push.js";
+import { extensionFor, type MediaFetcher } from "../src/services/media.js";
 import type { Db } from "../src/services/messaging.js";
 import type { SmsSender } from "../src/twilio.js";
 
@@ -103,19 +104,53 @@ export function createFakePushSender(): FakePushSender {
   return sender;
 }
 
+export interface FakeMediaFetcher extends MediaFetcher {
+  fetched: string[];
+  failUrls: Set<string>;
+}
+
+export function createFakeMediaFetcher(): FakeMediaFetcher {
+  let counter = 0;
+  const fetcher: FakeMediaFetcher = {
+    fetched: [],
+    failUrls: new Set(),
+    async fetchAndStore(url, contentType) {
+      if (fetcher.failUrls.has(url)) throw new Error("download failed");
+      fetcher.fetched.push(url);
+      counter += 1;
+      return {
+        path: `test-media-${counter}${extensionFor(contentType)}`,
+        contentType,
+        sizeBytes: 1024,
+      };
+    },
+  };
+  return fetcher;
+}
+
 export async function createTestApp() {
   const config = testConfig();
   const db = await createTestDb();
   const sender = createFakeSender();
   const pushSender = createFakePushSender();
-  const app = await buildApp({ config, db, sender, pushSender });
+  const mediaFetcher = createFakeMediaFetcher();
+  const app = await buildApp({ config, db, sender, pushSender, mediaFetcher });
   const authHeaders = await loginHeaders(app);
   const inject = (opts: InjectOptions) =>
     app.inject({
       ...opts,
       headers: { ...authHeaders, ...(opts.headers ?? {}) },
     });
-  return { app, db, sender, pushSender, config, authHeaders, inject };
+  return {
+    app,
+    db,
+    sender,
+    pushSender,
+    mediaFetcher,
+    config,
+    authHeaders,
+    inject,
+  };
 }
 
 /** Build a signed, form-encoded webhook request body + headers. */

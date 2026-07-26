@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Conversation } from "./api";
+import { api, type Conversation, type SearchHit } from "./api";
 import type { Selection } from "./Messenger";
 import {
   avatarHue,
@@ -8,6 +8,7 @@ import {
   sidebarTime,
 } from "./format";
 import { disablePush, enablePush, pushState, type PushState } from "./push";
+import { setSoundsEnabled, soundsEnabled } from "./sounds";
 
 function Avatar({ conversation }: { conversation: Conversation }) {
   const initials = avatarInitials(conversation);
@@ -47,6 +48,26 @@ export function Sidebar({
 }) {
   const [search, setSearch] = useState("");
   const [push, setPush] = useState<PushState>("unsupported");
+  const [sounds, setSounds] = useState(true);
+  const [hits, setHits] = useState<SearchHit[]>([]);
+
+  useEffect(() => setSounds(soundsEnabled()), []);
+
+  // Search message bodies server-side, debounced; local filtering stays instant.
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2) {
+      setHits([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api
+        .search(q)
+        .then(setHits)
+        .catch(() => setHits([]));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     pushState()
@@ -74,6 +95,43 @@ export function Sidebar({
       <header className="sidebar-header">
         <h1>Messages</h1>
         <div className="sidebar-actions">
+          <button
+            className={`icon-button ${sounds ? "active" : ""}`}
+            title={sounds ? "Message sounds on" : "Message sounds off"}
+            aria-label="Toggle message sounds"
+            aria-pressed={sounds}
+            onClick={() => {
+              setSoundsEnabled(!sounds);
+              setSounds(!sounds);
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M11 5 6.5 9H3v6h3.5L11 19V5z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              {sounds ? (
+                <path
+                  d="M15 9.5a3.5 3.5 0 0 1 0 5M17.5 7a7 7 0 0 1 0 10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              ) : (
+                <path
+                  d="M15.5 9.5l5 5m0-5l-5 5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              )}
+            </svg>
+          </button>
           {(push === "on" || push === "off" || push === "denied") && (
             <button
               className={`icon-button ${push === "on" ? "active" : ""}`}
@@ -154,7 +212,7 @@ export function Sidebar({
         onChange={(e) => setSearch(e.target.value)}
       />
       <div className="conversation-list">
-        {visible.length === 0 && (
+        {visible.length === 0 && hits.length === 0 && (
           <p className="empty-hint">
             {conversations.length === 0 ? "No conversations yet" : "No results"}
           </p>
@@ -183,6 +241,33 @@ export function Sidebar({
             </span>
           </button>
         ))}
+
+        {hits.length > 0 && (
+          <>
+            <p className="list-section-label">Messages</p>
+            {hits.map((hit) => (
+              <button
+                key={hit.message.id}
+                className="conversation-row"
+                onClick={() => onSelect(hit.conversation.id)}
+              >
+                <span className="unread-dot" />
+                <Avatar conversation={hit.conversation} />
+                <span className="row-main">
+                  <span className="row-top">
+                    <span className="row-name">
+                      {conversationName(hit.conversation)}
+                    </span>
+                    <span className="row-time">
+                      {sidebarTime(hit.message.createdAt)}
+                    </span>
+                  </span>
+                  <span className="row-preview">{hit.message.body}</span>
+                </span>
+              </button>
+            ))}
+          </>
+        )}
       </div>
     </aside>
   );

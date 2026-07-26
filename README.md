@@ -4,9 +4,26 @@ A self-hosted, dockerized messaging app for SMS/MMS via Twilio, styled after the
 macOS Messages app and installable as a PWA on mobile. See [PLAN.md](PLAN.md) for
 the full architecture and roadmap.
 
-**Status: Phase 4** — messaging core (Twilio webhooks, threading, delivery
-status), auth, realtime WebSockets, the Messages-style UI, and the PWA layer
-(installable, offline history, offline outbox, push notifications).
+**Status: complete** (phases 1–5 of [PLAN.md](PLAN.md)) — messaging core
+(Twilio webhooks, threading, delivery status), auth, realtime WebSockets, the
+Messages-style UI, the PWA layer (installable, offline history, offline outbox,
+push notifications), and MMS attachments, contact names, message search,
+message sounds, and retry of failed sends.
+
+## Features
+
+- **Threaded SMS/MMS** — one conversation per phone number, like Messages
+- **macOS Messages look and feel** — bubble clustering with tails, date
+  dividers, delivery states, dark mode, phone-style navigation on mobile
+- **Realtime** — inbound messages and delivery updates stream over WebSockets
+- **MMS** — inbound media is re-hosted locally and rendered inline; tap to
+  open full screen
+- **Contact names** — rename any thread; the name is used in notifications too
+- **Search** — filter threads, or search across all message content
+- **Message sounds** — synthesized send/receive tones, toggleable
+- **Retry** — failed sends show "Not Delivered" with a Try Again button
+- **PWA** — installable, reads offline, queues sends made offline, push
+  notifications
 
 ## Stack
 

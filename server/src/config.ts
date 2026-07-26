@@ -17,6 +17,8 @@ export interface Config {
   appPassword: string | null;
   sessionSecret: string;
   vapid: VapidConfig | null;
+  /** Directory where inbound MMS media is re-hosted. */
+  mediaDir: string;
 }
 
 export interface VapidConfig {
@@ -47,6 +49,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     appPassword: env.APP_PASSWORD || null,
     // Without a configured secret, sessions just reset on restart.
     sessionSecret: env.SESSION_SECRET || randomBytes(32).toString("hex"),
+    mediaDir: env.MEDIA_DIR ?? "/data/media",
     vapid:
       env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
         ? {

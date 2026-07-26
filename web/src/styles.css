@@ -327,6 +327,15 @@ button {
 
 /* ---------- thread ---------- */
 
+.list-section-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 12px 8px 4px;
+}
+
 .thread {
   flex: 1;
   min-width: 0;
@@ -491,6 +500,83 @@ button {
 
 .delivery-status.failed {
   color: var(--danger);
+}
+
+.retry-button {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+.retry-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- attachments ---------- */
+
+.bubble.media-only {
+  padding: 4px;
+  background: none;
+}
+
+.attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attachments:not(:last-child) {
+  margin-bottom: 6px;
+}
+
+.attachment-image {
+  display: block;
+  padding: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.attachment-image img {
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+}
+
+.attachment-video {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 14px;
+}
+
+.attachment-file {
+  color: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  cursor: zoom-out;
+  padding: 24px;
+}
+
+.lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+}
+
+.rename-button {
+  margin-left: auto;
 }
 
 /* ---------- composer ---------- */

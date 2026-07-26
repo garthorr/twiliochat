@@ -1,10 +1,18 @@
 import type { WebSocket } from "ws";
-import type { Conversation, Message } from "./services/messaging.js";
+import type {
+  Conversation,
+  MessageWithAttachments,
+} from "./services/messaging.js";
 
 export type RealtimeEvent =
-  | { type: "message.new"; conversation: Conversation; message: Message }
-  | { type: "message.status"; message: Message }
-  | { type: "conversation.read"; conversationId: string };
+  | {
+      type: "message.new";
+      conversation: Conversation;
+      message: MessageWithAttachments;
+    }
+  | { type: "message.status"; message: MessageWithAttachments }
+  | { type: "conversation.read"; conversationId: string }
+  | { type: "conversation.updated"; conversation: Conversation };
 
 const OPEN = 1;
 

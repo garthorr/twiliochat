@@ -1,3 +1,12 @@
+export interface Attachment {
+  id: string;
+  messageId: string;
+  path: string;
+  contentType: string;
+  sizeBytes: number | null;
+  createdAt: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -8,6 +17,7 @@ export interface Message {
   status: "receiving" | "received" | "queued" | "sent" | "delivered" | "failed";
   errorCode: string | null;
   createdAt: string;
+  attachments?: Attachment[];
 }
 
 export interface Conversation {
@@ -24,7 +34,13 @@ export interface Conversation {
 export type RealtimeEvent =
   | { type: "message.new"; conversation: Conversation; message: Message }
   | { type: "message.status"; message: Message }
-  | { type: "conversation.read"; conversationId: string };
+  | { type: "conversation.read"; conversationId: string }
+  | { type: "conversation.updated"; conversation: Conversation };
+
+export interface SearchHit {
+  conversation: Conversation;
+  message: Message;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -80,4 +96,16 @@ export const api = {
     request<void>(`/api/conversations/${conversationId}/read`, {
       method: "POST",
     }),
+  rename: (conversationId: string, displayName: string | null) =>
+    request<{ conversation: Conversation }>(
+      `/api/conversations/${conversationId}`,
+      { method: "PATCH", body: JSON.stringify({ displayName }) },
+    ),
+  retry: (messageId: string) =>
+    request<{ message: Message }>(`/api/messages/${messageId}/retry`, {
+      method: "POST",
+    }),
+  search: async (q: string) =>
+    (await request<{ results: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`))
+      .results,
 };

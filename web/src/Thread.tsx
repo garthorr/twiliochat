@@ -21,8 +21,54 @@ function statusLabel(status: Message["status"]): string {
   }
 }
 
-function MessageList({ messages }: { messages: Message[] }) {
+function Attachments({
+  message,
+  onOpen,
+}: {
+  message: Message;
+  onOpen: (src: string) => void;
+}) {
+  const items = message.attachments ?? [];
+  if (items.length === 0) return null;
+  return (
+    <div className="attachments">
+      {items.map((a) => {
+        const src = `/media/${a.path}`;
+        if (a.contentType.startsWith("image/")) {
+          return (
+            <button
+              key={a.id}
+              className="attachment-image"
+              onClick={() => onOpen(src)}
+              aria-label="View image"
+            >
+              <img src={src} alt="" loading="lazy" />
+            </button>
+          );
+        }
+        if (a.contentType.startsWith("video/")) {
+          return <video key={a.id} className="attachment-video" src={src} controls />;
+        }
+        return (
+          <a key={a.id} className="attachment-file" href={src} download>
+            Attachment ({a.contentType})
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function MessageList({
+  messages,
+  onRetry,
+}: {
+  messages: Message[];
+  onRetry: (messageId: string) => Promise<void>;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -52,12 +98,18 @@ function MessageList({ messages }: { messages: Message[] }) {
     const showStatus =
       m.direction === "outbound" && (m.status === "failed" || isLast);
 
+    const hasMedia = (m.attachments?.length ?? 0) > 0;
     rows.push(
       <div
         key={m.id}
         className={`bubble-row ${m.direction} ${endsCluster ? "tail" : ""}`}
       >
-        <div className={`bubble ${m.status === "failed" ? "failed" : ""}`}>
+        <div
+          className={`bubble ${m.status === "failed" ? "failed" : ""} ${
+            hasMedia && !m.body ? "media-only" : ""
+          }`}
+        >
+          <Attachments message={m} onOpen={setLightbox} />
           {m.body}
         </div>
       </div>,
@@ -70,6 +122,22 @@ function MessageList({ messages }: { messages: Message[] }) {
         >
           {statusLabel(m.status)}
           {m.status === "failed" && m.errorCode ? ` (error ${m.errorCode})` : ""}
+          {m.status === "failed" && (
+            <button
+              className="retry-button"
+              disabled={retrying === m.id}
+              onClick={async () => {
+                setRetrying(m.id);
+                try {
+                  await onRetry(m.id);
+                } finally {
+                  setRetrying(null);
+                }
+              }}
+            >
+              {retrying === m.id ? "Retrying…" : "Try Again"}
+            </button>
+          )}
         </div>,
       );
     }
@@ -78,6 +146,16 @@ function MessageList({ messages }: { messages: Message[] }) {
   return (
     <div className="message-scroll" ref={scrollRef}>
       <div className="message-list">{rows}</div>
+      {lightbox && (
+        <div
+          className="lightbox"
+          role="dialog"
+          aria-label="Image viewer"
+          onClick={() => setLightbox(null)}
+        >
+          <img src={lightbox} alt="" />
+        </div>
+      )}
     </div>
   );
 }
@@ -162,15 +240,29 @@ export function Thread({
   conversation,
   messages,
   onSend,
+  onRetry,
+  onRename,
   onBack,
 }: {
   mode: "existing" | "new" | "none";
   conversation: Conversation | null;
   messages: Message[];
   onSend: (to: string, body: string) => Promise<void>;
+  onRetry: (messageId: string) => Promise<void>;
+  onRename: (conversationId: string, displayName: string | null) => Promise<void>;
   onBack: () => void;
 }) {
   const [composeTo, setComposeTo] = useState("");
+
+  const promptRename = () => {
+    if (!conversation) return;
+    const next = window.prompt(
+      "Contact name (leave empty to show the phone number)",
+      conversation.displayName ?? "",
+    );
+    if (next === null) return;
+    void onRename(conversation.id, next.trim() || null);
+  };
 
   if (mode === "none") {
     return (
@@ -204,6 +296,25 @@ export function Thread({
           </svg>
         </button>
         <div className="thread-title">{title}</div>
+        {mode === "existing" && (
+          <button
+            className="icon-button rename-button"
+            title="Rename contact"
+            aria-label="Rename contact"
+            onClick={promptRename}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M16.5 3.9a2.1 2.1 0 0 1 3 3L8 18.4l-4 1 1-4L16.5 3.9z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
       </header>
       {mode === "new" && (
         <div className="compose-to">
@@ -218,7 +329,7 @@ export function Thread({
           />
         </div>
       )}
-      <MessageList messages={messages} />
+      <MessageList messages={messages} onRetry={onRetry} />
       <Composer
         autoFocus={mode === "existing"}
         onSend={(body) =>

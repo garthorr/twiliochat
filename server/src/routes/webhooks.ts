@@ -3,6 +3,8 @@ import twilio from "twilio";
 import type { Config } from "../config.js";
 import type { Hub } from "../realtime.js";
 import type { PushSender } from "../push.js";
+import { addAttachments } from "../services/messaging.js";
+import type { MediaFetcher } from "../services/media.js";
 import { notifyAll } from "../services/push.js";
 import type { Db } from "../services/messaging.js";
 import {
@@ -19,6 +21,21 @@ export interface WebhookDeps {
   db: Db;
   hub: Hub;
   pushSender: PushSender | null;
+  mediaFetcher: MediaFetcher | null;
+}
+
+/** Twilio sends media as NumMedia + MediaUrl0/MediaContentType0, … */
+function mediaItems(
+  body: Record<string, string | undefined>,
+): Array<{ url: string; contentType: string }> {
+  const count = Number(body.NumMedia ?? 0);
+  const items: Array<{ url: string; contentType: string }> = [];
+  for (let i = 0; i < count; i++) {
+    const url = body[`MediaUrl${i}`];
+    const contentType = body[`MediaContentType${i}`];
+    if (url) items.push({ url, contentType: contentType ?? "application/octet-stream" });
+  }
+  return items;
 }
 
 function formatNumberForNotification(raw: string): string {
@@ -46,7 +63,7 @@ function isValidTwilioRequest(config: Config, req: FastifyRequest): boolean {
 
 export function registerWebhookRoutes(
   app: FastifyInstance,
-  { config, db, hub, pushSender }: WebhookDeps,
+  { config, db, hub, pushSender, mediaFetcher }: WebhookDeps,
 ): void {
   app.addHook("preHandler", async (req, reply) => {
     if (!req.url.startsWith("/webhooks/")) return;
@@ -76,10 +93,31 @@ export function registerWebhookRoutes(
       body: body.Body ?? "",
     });
     if (result) {
+      // Twilio's media URLs expire and need auth, so re-host the bytes now.
+      const media = mediaItems(body);
+      let stored: Awaited<ReturnType<typeof addAttachments>> = [];
+      if (media.length > 0 && mediaFetcher) {
+        const downloads = await Promise.all(
+          media.map(async (m) => {
+            try {
+              return await mediaFetcher.fetchAndStore(m.url, m.contentType);
+            } catch (err) {
+              req.log.warn({ err, url: m.url }, "media download failed");
+              return null;
+            }
+          }),
+        );
+        stored = await addAttachments(
+          db,
+          result.message.id,
+          downloads.filter((d) => d !== null),
+        );
+      }
+
       hub.broadcast({
         type: "message.new",
         conversation: result.conversation,
-        message: result.message,
+        message: { ...result.message, attachments: stored },
       });
       req.log.info(
         { conversationId: result.conversation.id, messageId: result.message.id },
@@ -119,7 +157,12 @@ export function registerWebhookRoutes(
         status,
         body.ErrorCode ?? null,
       );
-      if (updated) hub.broadcast({ type: "message.status", message: updated });
+      if (updated) {
+        hub.broadcast({
+          type: "message.status",
+          message: { ...updated, attachments: [] },
+        });
+      }
     } else {
       req.log.warn({ twilioSid: sid, rawStatus }, "unknown twilio status");
     }

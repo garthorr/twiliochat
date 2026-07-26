@@ -13,6 +13,7 @@ import { registerApiRoutes } from "./routes/api.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerPushRoutes } from "./routes/push.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
+import type { MediaFetcher } from "./services/media.js";
 import type { Db } from "./services/messaging.js";
 import type { SmsSender } from "./twilio.js";
 
@@ -23,6 +24,7 @@ export interface AppDeps {
   db?: Db;
   sender?: SmsSender | null;
   pushSender?: PushSender | null;
+  mediaFetcher?: MediaFetcher | null;
 }
 
 // Reachable without a session cookie; everything else under /api requires one.
@@ -34,6 +36,7 @@ export async function buildApp({
   db,
   sender,
   pushSender,
+  mediaFetcher,
 }: AppDeps) {
   const app = Fastify({ logger: true });
   const hub = new Hub();
@@ -45,11 +48,21 @@ export async function buildApp({
 
   app.addHook("preHandler", async (req, reply) => {
     const url = (req.url.split("?")[0] ?? "").replace(/\/+$/, "") || "/";
-    if (!url.startsWith("/api/") || PUBLIC_API_ROUTES.has(url)) return;
+    const guarded = url.startsWith("/api/") || url.startsWith("/media/");
+    if (!guarded || PUBLIC_API_ROUTES.has(url)) return;
     if (!isAuthenticated(req)) {
       return reply.status(401).send({ error: "unauthorized" });
     }
   });
+
+  // Re-hosted MMS media — behind the same session guard as the API.
+  if (fs.existsSync(config.mediaDir)) {
+    await app.register(fastifyStatic, {
+      root: config.mediaDir,
+      prefix: "/media/",
+      decorateReply: false,
+    });
+  }
 
   app.addHook("onClose", async () => hub.close());
 
@@ -81,6 +94,7 @@ export async function buildApp({
       db,
       hub,
       pushSender: pushSender ?? null,
+      mediaFetcher: mediaFetcher ?? null,
     });
     registerApiRoutes(app, { config, db, sender: sender ?? null, hub });
     registerPushRoutes(app, { config, db });
