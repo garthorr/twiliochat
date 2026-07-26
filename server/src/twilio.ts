@@ -12,6 +12,7 @@ export interface SmsSender {
     from: string;
     body: string;
     statusCallback?: string;
+    mediaUrl?: string[];
   }): Promise<SendResult>;
 }
 
@@ -24,6 +25,7 @@ export function createTwilioSender(config: TwilioConfig): SmsSender {
         from: opts.from,
         body: opts.body,
         ...(opts.statusCallback ? { statusCallback: opts.statusCallback } : {}),
+        ...(opts.mediaUrl?.length ? { mediaUrl: opts.mediaUrl } : {}),
       });
       return { sid: message.sid, status: message.status };
     },

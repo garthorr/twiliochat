@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { TwilioConfig } from "../config.js";
@@ -36,6 +36,61 @@ export interface MediaFetcher {
    * URLs require auth and expire, so we re-host the bytes ourselves.
    */
   fetchAndStore(url: string, contentType: string): Promise<StoredMedia>;
+}
+
+/**
+ * Twilio fetches MediaUrl anonymously, but /media is behind the session
+ * guard. These short-lived HMAC signatures let exactly one file through for
+ * long enough to be fetched, without opening the directory to the world.
+ */
+export function signMediaPath(
+  secret: string,
+  filePath: string,
+  expiresAt: number,
+): string {
+  return createHmac("sha256", secret)
+    .update(`${path.basename(filePath)}:${expiresAt}`)
+    .digest("hex");
+}
+
+export function verifyMediaSignature(
+  secret: string,
+  filePath: string,
+  expires: string | undefined,
+  signature: string | undefined,
+): boolean {
+  if (!expires || !signature) return false;
+  const expiresAt = Number(expires);
+  if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return false;
+  const expected = signMediaPath(secret, filePath, expiresAt);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** Signed absolute URL Twilio can fetch for the next `ttlMs`. */
+export function signedMediaUrl(
+  publicUrl: string,
+  secret: string,
+  filePath: string,
+  ttlMs = 60 * 60 * 1000,
+): string {
+  const expiresAt = Date.now() + ttlMs;
+  const name = path.basename(filePath);
+  const sig = signMediaPath(secret, name, expiresAt);
+  return `${publicUrl}/media/${name}?expires=${expiresAt}&sig=${sig}`;
+}
+
+/** Store an uploaded outbound attachment. */
+export async function storeOutboundMedia(
+  mediaDir: string,
+  bytes: Buffer,
+  contentType: string,
+): Promise<StoredMedia> {
+  const name = `${randomUUID()}${extensionFor(contentType)}`;
+  await fs.mkdir(mediaDir, { recursive: true });
+  await fs.writeFile(path.join(mediaDir, name), bytes);
+  return { path: name, contentType, sizeBytes: bytes.byteLength };
 }
 
 /** Remove stored media files; missing files are not an error. */

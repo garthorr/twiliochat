@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { Conversation, Message } from "./api";
-import { ApiError } from "./api";
+import type { Conversation, Message, StagedMedia } from "./api";
+import { api, ApiError } from "./api";
 import { conversationName, dividerLabel } from "./format";
+import { segmentInfo, shouldShowCounter } from "./segments";
 
 const CLUSTER_GAP_MS = 60_000;
 const DIVIDER_GAP_MS = 3_600_000;
@@ -202,13 +203,36 @@ function Composer({
   autoFocus,
   disabled,
 }: {
-  onSend: (body: string) => Promise<void>;
+  onSend: (body: string, media: StagedMedia[]) => Promise<void>;
   autoFocus?: boolean;
   disabled?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [staged, setStaged] = useState<Array<StagedMedia & { preview: string }>>(
+    [],
+  );
+  const [uploading, setUploading] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const info = segmentInfo(draft);
+
+  const attach = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    try {
+      const media = await api.uploadAttachment(file);
+      setStaged((prev) => [
+        ...prev,
+        { ...media, preview: URL.createObjectURL(file) },
+      ]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
 
   const autosize = () => {
     const el = areaRef.current;
@@ -219,14 +243,19 @@ function Composer({
 
   const submit = async () => {
     const body = draft.trim();
-    if (!body) return;
+    if (!body && staged.length === 0) return;
     setError(null);
     setDraft("");
+    const media = staged;
+    setStaged([]);
     requestAnimationFrame(autosize);
     try {
-      await onSend(body);
+      await onSend(body, media.map(({ preview: _preview, ...m }) => m));
+      for (const m of media) URL.revokeObjectURL(m.preview);
     } catch (err) {
-      setDraft(body); // let the user retry without retyping
+      // Let the user retry without retyping or re-picking the photo.
+      setDraft(body);
+      setStaged(media);
       setError(err instanceof ApiError ? err.message : "Send failed");
     }
   };
@@ -234,7 +263,53 @@ function Composer({
   return (
     <div className="composer">
       {error && <div className="composer-error">{error}</div>}
+      {staged.length > 0 && (
+        <div className="staged-media">
+          {staged.map((m) => (
+            <div key={m.path} className="staged-item">
+              <img src={m.preview} alt="" />
+              <button
+                className="staged-remove"
+                aria-label="Remove photo"
+                onClick={() => {
+                  URL.revokeObjectURL(m.preview);
+                  setStaged((prev) => prev.filter((s) => s.path !== m.path));
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="composer-bar">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void attach(file);
+          }}
+        />
+        <button
+          className="attach-button"
+          aria-label="Attach photo"
+          title="Attach photo"
+          disabled={disabled || uploading}
+          onClick={() => fileRef.current?.click()}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 5v14M5 12h14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
         <textarea
           ref={areaRef}
           rows={1}
@@ -254,10 +329,10 @@ function Composer({
           }}
         />
         <button
-          className={`send-button ${draft.trim() ? "active" : ""}`}
+          className={`send-button ${draft.trim() || staged.length > 0 ? "active" : ""}`}
           aria-label="Send"
           onClick={() => void submit()}
-          disabled={disabled || !draft.trim()}
+          disabled={disabled || (!draft.trim() && staged.length === 0)}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -271,6 +346,13 @@ function Composer({
           </svg>
         </button>
       </div>
+      {shouldShowCounter(info) && (
+        <div className="segment-counter">
+          {info.remaining} left · {info.segments} segment
+          {info.segments === 1 ? "" : "s"}
+          {info.encoding === "UCS-2" ? " (unicode)" : ""}
+        </div>
+      )}
     </div>
   );
 }
@@ -291,7 +373,7 @@ export function Thread({
   messages: Message[];
   hasMore: boolean;
   onLoadOlder: (conversationId: string) => Promise<void>;
-  onSend: (to: string, body: string) => Promise<void>;
+  onSend: (to: string, body: string, media: StagedMedia[]) => Promise<void>;
   onRetry: (messageId: string) => Promise<void>;
   onRename: (conversationId: string, displayName: string | null) => Promise<void>;
   onBack: () => void;
@@ -390,10 +472,11 @@ export function Thread({
       <Composer
         autoFocus={mode === "existing"}
         disabled={optedOut}
-        onSend={(body) =>
+        onSend={(body, media) =>
           onSend(
             mode === "new" ? composeTo : conversation!.participants[0]!,
             body,
+            media,
           )
         }
       />

@@ -87,9 +87,17 @@ export async function getOrCreateConversation(
 
 export async function recordInboundMessage(
   db: Db,
-  params: { from: string; twilioSid: string; body: string },
+  params: {
+    from: string;
+    twilioSid: string;
+    body: string;
+    participants?: string[];
+  },
 ): Promise<{ conversation: Conversation; message: Message } | null> {
-  const conversation = await getOrCreateConversation(db, [params.from]);
+  const conversation = await getOrCreateConversation(
+    db,
+    params.participants?.length ? params.participants : [params.from],
+  );
   const inserted = await db
     .insert(messages)
     .values({

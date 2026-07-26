@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import type { Conversation, Message, RealtimeEvent } from "./api";
+import type {
+  Conversation,
+  Message,
+  RealtimeEvent,
+  StagedMedia,
+} from "./api";
 import { Contacts } from "./Contacts";
 import { Sidebar } from "./Sidebar";
 import { playReceived, playSent } from "./sounds";
@@ -196,8 +201,8 @@ export function Messenger({ onLogout }: { onLogout: () => void }) {
   }, [select]);
 
   const send = useCallback(
-    async (to: string, body: string): Promise<void> => {
-      const { conversationId, message } = await api.send(to, body);
+    async (to: string, body: string, media: StagedMedia[] = []): Promise<void> => {
+      const { conversationId, message } = await api.send(to, body, media);
       upsertMessage(message);
       if (message.status !== "failed") playSent();
       if (selectedRef.current === "new") {

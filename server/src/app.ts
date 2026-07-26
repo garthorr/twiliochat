@@ -16,7 +16,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerContactRoutes } from "./routes/contacts.js";
 import { registerPushRoutes } from "./routes/push.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
-import type { MediaFetcher } from "./services/media.js";
+import { verifyMediaSignature, type MediaFetcher } from "./services/media.js";
 import type { Db } from "./services/messaging.js";
 import type { SmsSender } from "./twilio.js";
 
@@ -52,6 +52,12 @@ export async function buildApp({
     { parseAs: "string" },
     (_req, body, done) => done(null, body),
   );
+  // Outbound MMS images are posted as raw bytes.
+  app.addContentTypeParser(
+    ["image/jpeg", "image/png", "image/gif", "image/webp"],
+    { parseAs: "buffer" },
+    (_req, body, done) => done(null, body),
+  );
   await app.register(fastifyCookie, { secret: config.sessionSecret });
   await app.register(fastifyWebsocket);
   // Global limiter is opt-in per route; see login and send routes.
@@ -79,9 +85,18 @@ export async function buildApp({
     const url = (req.url.split("?")[0] ?? "").replace(/\/+$/, "") || "/";
     const guarded = url.startsWith("/api/") || url.startsWith("/media/");
     if (!guarded || PUBLIC_API_ROUTES.has(url)) return;
-    if (!isAuthenticated(req)) {
-      return reply.status(401).send({ error: "unauthorized" });
+    if (isAuthenticated(req)) return;
+
+    // Twilio fetches outbound MMS media anonymously, so a valid short-lived
+    // signature stands in for a session on that one file.
+    if (url.startsWith("/media/")) {
+      const { expires, sig } = req.query as {
+        expires?: string;
+        sig?: string;
+      };
+      if (verifyMediaSignature(config.sessionSecret, url, expires, sig)) return;
     }
+    return reply.status(401).send({ error: "unauthorized" });
   });
 
   // Re-hosted MMS media — behind the same session guard as the API.

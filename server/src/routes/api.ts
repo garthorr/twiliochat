@@ -2,9 +2,14 @@ import type { FastifyInstance } from "fastify";
 import type { Config } from "../config.js";
 import type { Hub } from "../realtime.js";
 import { namesForNumbers, resolveName } from "../services/contacts.js";
-import { deleteMediaFiles } from "../services/media.js";
+import {
+  deleteMediaFiles,
+  signedMediaUrl,
+  storeOutboundMedia,
+} from "../services/media.js";
 import type { Db } from "../services/messaging.js";
 import {
+  addAttachments,
   attachmentPathsForConversation,
   countRecentOutbound,
   createOutboundMessage,
@@ -28,6 +33,15 @@ import type { SmsSender } from "../twilio.js";
 
 /** Twilio's error for "recipient has opted out of receiving messages". */
 const OPT_OUT_ERROR_CODE = "21610";
+
+/** Twilio accepts up to 5MB of media per MMS. */
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const ALLOWED_UPLOAD_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
 
 export interface ApiDeps {
   config: Config;
@@ -179,14 +193,55 @@ export function registerApiRoutes(
     },
   };
 
+  /**
+   * Stage an image for an outbound MMS. Returns an id the send call
+   * references; Twilio fetches it later via a signed URL.
+   */
+  app.post("/api/attachments", {
+    bodyLimit: MAX_UPLOAD_BYTES,
+  }, async (req, reply) => {
+    const contentType = (req.headers["content-type"] ?? "").split(";")[0]!.trim();
+    if (!ALLOWED_UPLOAD_TYPES.has(contentType)) {
+      return reply
+        .status(415)
+        .send({ error: `unsupported media type: ${contentType || "none"}` });
+    }
+    if (!Buffer.isBuffer(req.body)) {
+      return reply.status(400).send({ error: "expected a binary body" });
+    }
+    const stored = await storeOutboundMedia(
+      config.mediaDir,
+      req.body,
+      contentType,
+    );
+    return reply.status(201).send(stored);
+  });
+
   app.post("/api/messages", sendRateLimit, async (req, reply) => {
     if (!sender || !config.twilio) {
       return reply.status(503).send({ error: "twilio not configured" });
     }
 
-    const { to, body } = (req.body ?? {}) as { to?: string; body?: string };
-    if (typeof to !== "string" || typeof body !== "string" || !body.trim()) {
-      return reply.status(400).send({ error: "to and body are required" });
+    const { to, body, media } = (req.body ?? {}) as {
+      to?: string;
+      body?: string;
+      media?: Array<{ path: string; contentType: string; sizeBytes?: number }>;
+    };
+    const attachments = Array.isArray(media) ? media : [];
+    // A picture message may have no text, but must have one or the other.
+    if (
+      typeof to !== "string" ||
+      typeof body !== "string" ||
+      (!body.trim() && attachments.length === 0)
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "to plus a body or an attachment are required" });
+    }
+    if (attachments.length > 0 && !config.publicUrl) {
+      return reply.status(503).send({
+        error: "PUBLIC_URL must be set to send photos (Twilio fetches them)",
+      });
     }
 
     let toNumber: string;
@@ -210,10 +265,19 @@ export function registerApiRoutes(
       from: config.twilio.phoneNumber,
       body,
     });
+    const stored = await addAttachments(
+      db,
+      message.id,
+      attachments.map((a) => ({
+        path: a.path,
+        contentType: a.contentType,
+        sizeBytes: a.sizeBytes ?? 0,
+      })),
+    );
 
     if (conversation.optedOut) {
       const failed = await markMessageFailed(db, message.id, OPT_OUT_ERROR_CODE);
-      const result = { ...(failed ?? message), attachments: [] };
+      const result = { ...(failed ?? message), attachments: stored };
       hub.broadcast({ type: "message.new", conversation, message: result });
       return reply.status(201).send({
         conversationId: conversation.id,
@@ -229,9 +293,16 @@ export function registerApiRoutes(
         ...(config.publicUrl
           ? { statusCallback: `${config.publicUrl}/webhooks/status` }
           : {}),
+        ...(stored.length > 0
+          ? {
+              mediaUrl: stored.map((a) =>
+                signedMediaUrl(config.publicUrl!, config.sessionSecret, a.path),
+              ),
+            }
+          : {}),
       });
       const updated = await setMessageSid(db, message.id, result.sid);
-      const sent = { ...(updated ?? message), attachments: [] };
+      const sent = { ...(updated ?? message), attachments: stored };
       hub.broadcast({ type: "message.new", conversation, message: sent });
       return reply.status(201).send({
         conversationId: conversation.id,
@@ -241,7 +312,7 @@ export function registerApiRoutes(
       req.log.error({ err, messageId: message.id }, "twilio send failed");
       const code = twilioErrorCode(err);
       const failed = await markMessageFailed(db, message.id, code);
-      const result = { ...(failed ?? message), attachments: [] };
+      const result = { ...(failed ?? message), attachments: stored };
       hub.broadcast({ type: "message.new", conversation, message: result });
 
       if (code === OPT_OUT_ERROR_CODE) {

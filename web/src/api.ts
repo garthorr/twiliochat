@@ -53,6 +53,13 @@ export interface Contact {
   name: string;
 }
 
+/** An uploaded image awaiting send. */
+export interface StagedMedia {
+  path: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
 export interface ImportResult {
   contactsImported: number;
   numbersImported: number;
@@ -112,11 +119,29 @@ export const api = {
         before ? `?before=${encodeURIComponent(before)}` : ""
       }`,
     ),
-  send: (to: string, body: string) =>
+  send: (to: string, body: string, media: StagedMedia[] = []) =>
     request<{ conversationId: string; message: Message }>("/api/messages", {
       method: "POST",
-      body: JSON.stringify({ to, body }),
+      body: JSON.stringify({ to, body, media }),
     }),
+  uploadAttachment: async (file: File): Promise<StagedMedia> => {
+    const res = await fetch("/api/attachments", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": file.type },
+      body: file,
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        detail = ((await res.json()) as { error?: string }).error ?? detail;
+      } catch {
+        // non-JSON error body
+      }
+      throw new ApiError(res.status, detail);
+    }
+    return (await res.json()) as StagedMedia;
+  },
   markRead: (conversationId: string) =>
     request<void>(`/api/conversations/${conversationId}/read`, {
       method: "POST",

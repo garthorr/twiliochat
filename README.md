@@ -16,9 +16,11 @@ message sounds, and retry of failed sends.
 - **macOS Messages look and feel** — bubble clustering with tails, date
   dividers, delivery states, dark mode, phone-style navigation on mobile
 - **Realtime** — inbound messages and delivery updates stream over WebSockets
-- **MMS** — inbound media is re-hosted locally and rendered inline; tap to
-  open full screen
-- **Contact names** — rename any thread; the name is used in notifications too
+- **MMS both ways** — inbound media is re-hosted locally and rendered inline
+  (tap to open full screen); attach photos to outgoing messages
+- **Contacts** — import names from a Google Contacts vCard/CSV export, or
+  rename an individual thread; names are used in notifications too
+- **Segment counter** — shows cost-relevant SMS segments as you type
 - **Search** — filter threads, or search across all message content
 - **Message sounds** — synthesized send/receive tones, toggleable
 - **Retry** — failed sends show "Not Delivered" with a Try Again button
@@ -98,6 +100,29 @@ Then use the bell button in the sidebar to subscribe. Caveats:
 - Push is disabled entirely when `VAPID_*` is unset; the bell is hidden.
 - A message composed while offline shows a send error until the service worker
   replays it in the background; it then appears in the thread normally.
+
+## Contacts
+
+Open the contacts button in the sidebar and upload an export from
+contacts.google.com (**vCard** or **Google CSV**). Numbers are normalized to
+E.164 and matched to conversations automatically, including threads that don't
+exist yet. Only name/number pairs are stored — the export file itself is never
+written to disk, and nothing is sent to Google.
+
+A name set on an individual conversation (the pencil in the thread header)
+always overrides the imported one.
+
+## Known limitations
+
+- **Group MMS is not supported.** Twilio's Programmable Messaging API — which
+  this app is built on — does not offer it; group messaging requires the
+  Conversations API. The database schema keys threads by a participant *set*,
+  so the groundwork is there if that ever changes.
+- Sending photos requires `PUBLIC_URL` to be set, because Twilio fetches the
+  media from your server. Those fetches use short-lived signed URLs rather than
+  exposing the media directory.
+- iMessage-only features (typing indicators, read receipts, reactions) do not
+  exist over SMS and are deliberately not faked.
 
 ## Security notes
 

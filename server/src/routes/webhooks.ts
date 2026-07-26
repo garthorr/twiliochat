@@ -88,6 +88,9 @@ export function registerWebhookRoutes(
       from = body.From;
     }
 
+    // Threaded by sender. Group MMS is not available on Programmable
+    // Messaging (only via the Conversations API), so there is no second
+    // participant to key on; the schema supports it if that ever changes.
     const result = await recordInboundMessage(db, {
       from,
       twilioSid: sid,
